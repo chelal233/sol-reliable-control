@@ -82,6 +82,7 @@ prompt: the compact plan packet plus the result-packet rules
 - Select `luna-max` by default for bounded work and difficult work whose scope remains narrow and independently verifiable.
 - Select `sol-xhigh` for difficult reasoning, cross-cutting planning, arbitration, or final review; request `xhigh` effort.
 - Do not escalate merely after a failure; identify the failure class and task-fit reason first.
+- If the same issue has been rejected more than twice under `luna-max`, or unclear business semantics repeatedly cause regressions, stop retrying `luna-max` and route the issue to `sol-xhigh` with the failure evidence.
 - `FALLBACK` is an explicit recovery route. It may name any safe compatible lane, but it is not a normal route and must be labeled `UNVERIFIED`.
 - Fallback is limited to low-risk, narrow, independently verifiable work. High-risk work returns `BLOCKED` when the requested lane cannot be verified.
 
