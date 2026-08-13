@@ -97,6 +97,10 @@ roots. Restart Codex, then call `sol_luna_exec` first with
 paths, `DESKTOP-*` host names, and credential-shaped values.
 The runtime path and SHA-256 pin are mandatory; the broker never selects a
 different “latest” executable implicitly.
+The app-server branch sends only its documented `--strict-config` option; CLI-
+only ignore-config/rules flags are not passed to app-server. Model, sandbox,
+approval, and no-fallback constraints are checked from the task-bound
+`thread/start` facts.
 
 For implementation packets that may exceed the caller's MCP deadline, keep the
 identity handshake synchronous, then submit the packet with

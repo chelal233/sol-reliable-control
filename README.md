@@ -87,6 +87,9 @@ SOL_LUNA_RUNTIME_SHA256 = "<64-hex-approved-sha256>"
 
 保存前将尖括号占位符替换为本机实际路径；broker 不再内置任何默认文件系统根目录。
 运行时路径和 SHA-256 必须成对固定，不能让 broker 自动选择“最新”可执行文件。
+app-server 只使用它公开的 `--strict-config`；CLI 专用的 ignore-config/rules
+参数不会误传给 app-server，模型、sandbox、approval 和 no-fallback 约束由
+`thread/start` 的宿主字段核验。
 重启 Codex 后，先调用 `sol_luna_exec` 并保持 `handshake_only=true`；只有收到结构化结果后，Sol 才能决定是否继续。broker 会对 MCP 输出中的用户目录、主机名和凭据形态值做脱敏。完整注册和证据规则见 [references/registration.md](references/registration.md)。
 
 对于可能超过调用方 MCP deadline 的实现任务，握手通过后将实现包提交为
