@@ -57,30 +57,34 @@ fallback.
 Capability is scoped to the controller thread and host that will perform the
 dispatch. A capability list captured in another thread, a UI picker, a role
 file, or a worker's self-report cannot authorize this dispatch. For normal
-`LUNA_MAX`, apply this two-level ladder:
+`LUNA_MAX`, apply this three-level ladder:
 
 1. **Priority 1: current-thread native.** Use
    `multi_agent_v1__spawn_agent` when its model/effort matrix contains
    `gpt-5.6-luna / max` and its preflight supplies the required host evidence.
    A future equivalent is eligible only when the host explicitly declares a
    native contract whose schema and evidence are verifiable.
-2. **Priority 2: HOST_MANAGED MCP.** Use `sol_luna_broker` only when priority 1
-   is not visible, its declared schema/model cannot express Luna/max, or its
-   preflight cannot supply the required host evidence. Record the exact native
-   failure condition before broker preflight.
+2. **Priority 2: USER_VISIBLE_TASK (conditional).** If the plan explicitly
+   allows a user-owned task and the user has approved it, use the Desktop task
+   adapter. If the plan denies or omits that permission, skip this step without
+   creating a task.
+3. **Priority 3: HOST_MANAGED MCP.** Use `sol_luna_broker` only after priority
+   1 fails and priority 2 is skipped or fails. Record both earlier decisions
+   before broker preflight.
 
 A separately registered `CUSTOM_ROLE` remains an explicit specialized route;
-it does not reorder this normal-dispatch ladder. If both ladder candidates fail
-their own preflight, preserve the requested model and return `BLOCKED`.
+it does not reorder this normal-dispatch ladder. If all eligible ladder
+candidates fail their own preflight, preserve the requested model and return
+`BLOCKED`.
 
 If a thread exposes only `collaboration.spawn_agent` with
 `gpt-5.6-sol`/`gpt-5.6-terra`, that candidate is unavailable, but the result
 must not be promoted to a global host verdict until all visible candidates have
 been checked. If `multi_agent_v1__spawn_agent` is visible on a sibling thread
-but not this controller, use `THREAD_SURFACE_NOT_VISIBLE` and request a host
-surface migration/rebind or a fresh controller thread only if priority-2 MCP is
-also unavailable. Never transplant a sibling's `agent_id`, receipt, or
-self-report.
+but not this controller, use `THREAD_SURFACE_NOT_VISIBLE`, evaluate the
+explicit Desktop task gate, and then request a host surface migration/rebind or
+a fresh controller thread only if priority-3 MCP is also unavailable. Never
+transplant a sibling's `agent_id`, receipt, or self-report.
 
 ## Adapter: NATIVE_GENERIC
 
@@ -169,13 +173,13 @@ create a new user-owned Codex task merely to obtain a model.
 
 ## Adapter: USER_VISIBLE_TASK
 
-This is an explicit Desktop app task adapter, based on the route documented by
-`sol-advisor`. It is outside the normal native-first -> MCP-second ladder and
-requires all of the following plan facts:
+This is the conditional priority-2 Desktop app task adapter, based on the route
+documented by `sol-advisor`. It is part of the normal native-first -> Desktop ->
+MCP ladder and requires all of the following plan facts:
 
 ```text
 Surface: USER_VISIBLE_TASK
-Dispatch priority: EXPLICIT_USER_VISIBLE_TASK
+Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP
 User-owned task: ALLOWED
 User approval: GRANTED
 Requested model/effort: gpt-5.6-luna / max
@@ -201,11 +205,11 @@ when `User-owned task` is denied.
 
 ### MCP broker variant
 
-The Sol Luna broker is a local STDIO MCP server that provides the priority-2
+The Sol Luna broker is a local STDIO MCP server that provides the priority-3
 `HOST_MANAGED` transport only when the current controller thread cannot see a
-native worker tool, the visible native schema/model mismatches Luna/max, or the
-native preflight cannot produce the required host evidence. Its stable tool
-schema is:
+native worker tool, the visible native schema/model mismatches Luna/max, native
+preflight cannot produce the required host evidence, or the eligible Desktop
+task was skipped or failed. Its stable tool schema is:
 
 ```text
 sol_luna_exec({

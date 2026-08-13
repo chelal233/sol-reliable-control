@@ -13,7 +13,7 @@ Route: DIRECT | SOL_ONLY | LUNA_MAX | SOL_XHIGH | FALLBACK
 Execution context: FRESH | CURRENT
 Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
 Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | USER_VISIBLE_TASK
-Dispatch priority: NATIVE_FIRST_THEN_MCP | EXPLICIT_USER_VISIBLE_TASK
+Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP | EXPLICIT_USER_VISIBLE_TASK
 User-owned task: DENIED | ALLOWED
 User approval: REQUIRED | GRANTED | NOT_REQUIRED
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
@@ -41,27 +41,30 @@ is fixed: `LUNA_MAX` requests `gpt-5.6-luna / max`, and `SOL_XHIGH` requests
 `gpt-5.6-sol / xhigh`. A surface may reject that request; it may not silently
 rewrite it.
 
-For a normal `LUNA_MAX` packet, `NATIVE_FIRST_THEN_MCP` is an ordered contract:
+For a normal `LUNA_MAX` packet, `NATIVE_FIRST_THEN_DESKTOP_THEN_MCP` is an
+ordered contract:
 
 1. Preflight and use the current-thread native subagent surface when its own
    declared schema, model/effort matrix, fresh-context semantics, and host
    evidence match the packet. `multi_agent_v1__spawn_agent` is canonical; a
    future equivalent must be explicitly declared native and independently
    verifiable.
-2. Select the `HOST_MANAGED` `sol_luna_broker` MCP only after recording that no
-   native surface is visible, the native schema/model is incompatible, or the
-   native preflight cannot obtain the host evidence required by the identity
-   gate.
-3. If MCP preflight also fails, return `BLOCKED` with both surface failures and
+2. If native preflight fails and the plan explicitly allows a user-owned task,
+   select `USER_VISIBLE_TASK` and run its handshake. If the plan denies or does
+   not approve a user-owned task, skip this step; do not create one implicitly.
+3. Select the `HOST_MANAGED` `sol_luna_broker` MCP only after recording that no
+   native surface is visible, the native schema/model is incompatible, the
+   Desktop task was skipped or failed, or native preflight cannot obtain the
+   host evidence required by the identity gate.
+4. If MCP preflight also fails, return `BLOCKED` with all surface failures and
    keep the requested `gpt-5.6-luna / max` binding. No silent model fallback is
    permitted.
 
-The Desktop app task lane is not an implicit third step. It is selected only by
-an explicit plan with `Surface: USER_VISIBLE_TASK`,
-`Dispatch priority: EXPLICIT_USER_VISIBLE_TASK`, `User-owned task: ALLOWED`,
-and `User approval: GRANTED`. It must never be created merely to prove host
-enablement or to bypass a `No user-owned task: true` packet. See
-[references/desktop-task-lane.md](desktop-task-lane.md).
+The Desktop app task lane is therefore the conditional priority-2 step, not an
+implicit task creation. It requires `Surface: USER_VISIBLE_TASK`,
+`User-owned task: ALLOWED`, and `User approval: GRANTED`; it must never be
+created merely to prove host enablement or bypass a `No user-owned task: true`
+packet. See [references/desktop-task-lane.md](desktop-task-lane.md).
 
 Capability snapshots are thread- and host-bound. Enumerate worker tools from
 the same controller thread that will dispatch the packet. The preferred native
@@ -82,15 +85,17 @@ model list omits Luna, classify that candidate as unavailable and continue
 surface discovery; do not conclude that Luna is unavailable on the host if
 `multi_agent_v1__spawn_agent` is visible under another thread binding. If no
 eligible native surface is visible in the current thread, record
-`THREAD_SURFACE_NOT_VISIBLE` and continue priority-2 MCP preflight. Return
-`HOST_REGISTRATION_REQUIRED` and request surface migration/rebind or a fresh
-controller thread only when the broker is also unavailable.
+   `THREAD_SURFACE_NOT_VISIBLE` and continue the conditional Desktop task
+   preflight, then priority-3 MCP preflight when Desktop is skipped or fails.
+   Return `HOST_REGISTRATION_REQUIRED` and request surface migration/rebind or a
+   fresh controller thread only when the broker is also unavailable.
 
 The older `collaboration.spawn_agent` schema cannot identify itself as
 `multi_agent_v1__spawn_agent`, borrow the canonical wrapper's model matrix, or
 reuse its receipt/evidence. It qualifies as native only under its own explicit
 host declaration and verifiable contract; otherwise record the mismatch and
-advance to priority 2.
+advance to the conditional Desktop task, then priority 3 MCP when Desktop is not
+eligible.
 
 `Luna enablement: REQUIRED` is the default deployment requirement. It means
 the host must expose the normal Luna capability even when a particular packet
@@ -277,9 +282,10 @@ failure remains an execution blocker.
 ### MCP Luna broker dispatch
 
 When native worker tools are absent from the current thread, their schema/model
-cannot express Luna/max, or native preflight cannot return the host evidence
-required by the plan, the caller may select the installed `sol_luna_broker` MCP
-server as the priority-2 `HOST_MANAGED` transport adapter:
+cannot express Luna/max, the explicitly eligible Desktop task was skipped or
+failed, or native preflight cannot return the host evidence required by the
+plan, the caller may select the installed `sol_luna_broker` MCP server as the
+priority-3 `HOST_MANAGED` transport adapter:
 
 ```text
 sol_luna_exec({

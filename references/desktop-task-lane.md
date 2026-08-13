@@ -8,13 +8,13 @@ subagent and not an enablement workaround.
 
 ## When it is allowed
 
-The normal Sol ladder remains **native Luna -> managed MCP**. The desktop task
-lane is an explicit operator choice only when all of these fields are present in
-the plan:
+The normal Sol ladder is **native Luna -> Desktop task -> managed MCP**. The
+Desktop step is conditional: it is attempted only when all of these fields are
+present in the plan:
 
 ```text
 Surface: USER_VISIBLE_TASK
-Dispatch priority: EXPLICIT_USER_VISIBLE_TASK
+Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP
 User-owned task: ALLOWED
 User approval: GRANTED
 Requested model/effort: gpt-5.6-luna / max
@@ -94,5 +94,5 @@ user-home paths, host names, or full transcripts.
 
 This route is intentionally visible in the user's task list. That visibility is
 the trade-off for avoiding a nested local MCP process. It is not a background
-subagent, and it must never be silently inserted into the native-first or
-MCP-second ladder.
+subagent. If the user-owned-task gate is denied, the controller skips this
+conditional priority-2 step and proceeds to the priority-3 MCP route.
