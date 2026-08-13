@@ -231,7 +231,8 @@ The default broker fixes `gpt-5.6-luna / max` and starts a fresh ephemeral
 app-server thread. Its `thread/start` response is a task-bound
 `HOST_LAUNCH_RECORD` containing host model/effort. When that record matches and
 the same turn has no `model/rerouted` event, the normalized result may be
-`HOST_VERIFIED` with proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`. Set
+`Identity: VERIFIED` with proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`. Overall
+`HOST_VERIFIED` additionally requires `execution_status=COMPLETED`. Set
 `SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; that route returns a
 `BROKER_RUN_RECEIPT`, has no host telemetry, and remains `STARTED_UNVERIFIED`.
 Neither route permits silent model substitution.
@@ -244,10 +245,12 @@ thread id, and the subsequent turn has no `model/rerouted` event. If the turn
 reports another effective model/effort, or a reroute event is emitted, classify
 the result as `HOST_MODEL_MISMATCH` and keep high-risk work blocked.
 
-This creates three separate retest states: `TRANSPORT_VERIFIED` means the
-broker answered; `HOST_LAUNCH_RECORDED` means the host assigned Luna/max at
-thread start; `HOST_VERIFIED` means the effective turn remained Luna/max with
-no host mismatch. A launch record alone is not the final retest result.
+This creates independent identity and execution facts: `TRANSPORT_VERIFIED`
+means the broker answered; `HOST_LAUNCH_RECORDED` means the host assigned
+Luna/max at thread start; `Identity: VERIFIED` means the matching turn had no
+host reroute; and overall `HOST_VERIFIED` means that identity is verified and
+`execution_status=COMPLETED`. A launch record alone is not the final retest
+result.
 
 The identity handshake remains synchronous. For an implementation packet that
 may exceed the caller's MCP deadline, submit with `execution_mode="async"`
@@ -291,6 +294,9 @@ Summary: <what happened>
 Changed or produced: <exact paths, artifacts, or None>
 Verification: <checks, exit status, concise result>
 Routing verdict: HOST_VERIFIED | HOST_LAUNCH_RECORDED | HOST_DISPATCHED_UNATTESTED | HOST_MODEL_MISMATCH | DISPATCH_UNCONFIRMED
+Identity: VERIFIED | UNVERIFIED | FAIL
+Broker execution_status: COMPLETED | FAILED | NOT_STARTED | UNKNOWN
+Broker failure code: <concrete code or None>
 Self-report warning: NONE | MISMATCH | UNKNOWN
 Evidence: <artifact or result path bound to the acceptance conditions>
 Review verdict: PASS | FIX | BLOCKED | NOT_RUN
@@ -298,7 +304,16 @@ Failure class: runtime | model_identity | permission | dependency | scope | veri
 Blocker: <None or concrete reason>
 ```
 
-`PASS` requires `Changed or produced`, `Verification`, and `Evidence`. Use `PASS_WITH_WARNING` only when the host gate passed and the warning is limited to an advisory self-report mismatch. A worker may approve only its own result; Sol decides the overall task.
+`PASS` requires `Changed or produced`, `Verification`, and `Evidence`. For a
+broker result, `HOST_VERIFIED` requires both `Identity: VERIFIED` and
+`execution_status=COMPLETED`. `WINDOWS_SANDBOX_ACL_FAILED` and
+`PROCESS_CREATION_DENIED` are execution blockers with failure class `runtime`
+or `permission`; they do not change the independent identity fact, but they
+keep high-risk work `BLOCKED`. Do not silently switch models or relax sandbox
+or permission policy to turn either failure into a pass. Use `PASS_WITH_WARNING`
+only when the host gate passed and the warning is limited to an advisory
+self-report mismatch. A worker may approve only its own result; Sol decides the
+overall task.
 
 ## Fallback and failure rules
 

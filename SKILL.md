@@ -163,7 +163,15 @@ native subagent. The broker must:
 - return a task-bound `HOST_LAUNCH_RECORD`, runtime version/hash,
   fresh/history facts, and the worker result; and
 - label model self-report as advisory. The app-server launch record can satisfy
-  `HOST_VERIFIED` only when it matches and no host reroute is observed.
+  `identity=VERIFIED` only when it matches and no host reroute is observed.
+  Overall `HOST_VERIFIED` additionally requires `execution_status=COMPLETED`.
+
+Keep broker identity and execution facts independent. In particular,
+`WINDOWS_SANDBOX_ACL_FAILED` and `PROCESS_CREATION_DENIED` are execution
+blockers classified as `runtime` or `permission`; they do not erase an already
+verified host identity. They do keep the overall result below `HOST_VERIFIED`,
+and high-risk work remains `BLOCKED`. Do not respond by silently changing the
+model or relaxing the sandbox or permissions.
 
 For implementation packets that may exceed the MCP caller deadline, the broker
 supports an explicit asynchronous `HOST_JOB_RECEIPT` plus `sol_luna_poll`.
