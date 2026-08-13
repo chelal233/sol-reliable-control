@@ -357,11 +357,14 @@ function Invoke-LunaTool {
     } elseif ($run.exit_code -ne 0) {
         $identity = 'FAIL'
         $blocker = "Codex runtime exited with code $($run.exit_code)"
-    } elseif (-not $selfModel -or -not $selfEffort) {
-        $blocker = 'Effective model/effort was not observable in the worker response'
-    } elseif ($selfModel.ToLowerInvariant() -ne $script:FixedModel -or $selfEffort.ToLowerInvariant() -ne $script:FixedEffort) {
+    } elseif ($selfModel -and $selfModel.ToLowerInvariant() -ne $script:FixedModel) {
         $identity = 'FAIL'
         $blocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
+    } elseif ($selfEffort -and $selfEffort.ToLowerInvariant() -ne $script:FixedEffort) {
+        $identity = 'FAIL'
+        $blocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
+    } elseif (-not $selfModel -or -not $selfEffort) {
+        $blocker = 'Effective model/effort was not observable in the worker response'
     }
 
     $status = if ($identity -eq 'FAIL') { 'BLOCKED' } else { 'STARTED_UNVERIFIED' }
