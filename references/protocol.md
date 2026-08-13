@@ -226,14 +226,14 @@ sol_luna_exec({
 })
 ```
 
-The broker fixes `gpt-5.6-luna / max`, starts a fresh ephemeral CLI process,
-excludes controller history, and returns a task-bound `BROKER_RUN_RECEIPT`.
-That receipt is not a host receipt. The broker's `host_observed_model` and
-`host_observed_effort` remain `UNKNOWN` unless the host supplies independent
-telemetry; a matching worker self-report is `SELF_REPORT_ONLY`. The normalized
-result is therefore `STARTED_UNVERIFIED` until host identity evidence arrives.
-It is a usable operational Luna path, not permission to bypass `HOST_VERIFIED`
-for high-risk implementation.
+The default broker fixes `gpt-5.6-luna / max` and starts a fresh ephemeral
+app-server thread. Its `thread/start` response is a task-bound
+`HOST_LAUNCH_RECORD` containing host model/effort. When that record matches and
+the same turn has no `model/rerouted` event, the normalized result may be
+`HOST_VERIFIED` with proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`. Set
+`SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; that route returns a
+`BROKER_RUN_RECEIPT`, has no host telemetry, and remains `STARTED_UNVERIFIED`.
+Neither route permits silent model substitution.
 
 An app-server `thread/start` response is a stronger `HOST_MANAGED` launch
 record, but it is not automatically proof of effective execution. Accept it

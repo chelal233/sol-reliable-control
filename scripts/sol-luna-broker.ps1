@@ -11,6 +11,10 @@ $script:BrokerVersion = '1.0.0'
 $script:FixedModel = 'gpt-5.6-luna'
 $script:FixedEffort = 'max'
 $script:CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+$script:Transport = if ($env:SOL_LUNA_TRANSPORT) { $env:SOL_LUNA_TRANSPORT.ToLowerInvariant() } else { 'app-server' }
+if ($script:Transport -notin @('app-server', 'cli')) {
+    throw 'SOL_LUNA_TRANSPORT must be app-server or cli'
+}
 
 function Send-JsonLine {
     param([Parameter(Mandatory = $true)] [object] $Value)
@@ -193,6 +197,240 @@ function Invoke-CodexWorker {
     }
 }
 
+function Send-AppServerJson {
+    param(
+        [Parameter(Mandatory = $true)] [System.Diagnostics.Process] $Process,
+        [Parameter(Mandatory = $true)] [object] $Value
+    )
+
+    $Process.StandardInput.WriteLine(($Value | ConvertTo-Json -Compress -Depth 40))
+    $Process.StandardInput.Flush()
+}
+
+function Read-AppServerJson {
+    param(
+        [Parameter(Mandatory = $true)] [System.Diagnostics.Process] $Process,
+        [Parameter(Mandatory = $true)] [int] $TimeoutMs
+    )
+
+    $task = $Process.StandardOutput.ReadLineAsync()
+    if (-not $task.Wait($TimeoutMs)) { return $null }
+    $line = $task.Result
+    if ($null -eq $line) { return $null }
+    try { return ($line | ConvertFrom-Json) } catch { return $null }
+}
+
+function Stop-AppServerProcess {
+    param([Parameter(Mandatory = $true)] [System.Diagnostics.Process] $Process)
+
+    if (-not $Process.HasExited) {
+        try { $Process.Kill($true) } catch { try { $Process.Kill() } catch { } }
+    }
+    try { $Process.WaitForExit() } catch { }
+}
+
+function Get-AppServerMessageText {
+    param([Parameter(Mandatory = $true)] [object[]] $Events)
+
+    $texts = [System.Collections.Generic.List[string]]::new()
+    foreach ($event in $Events) {
+        $method = Get-TextProperty $event 'method'
+        if ($method -eq 'item/completed') {
+            $paramsProperty = $event.PSObject.Properties['params']
+            if ($paramsProperty) {
+                $itemProperty = $paramsProperty.Value.PSObject.Properties['item']
+                if ($itemProperty) {
+                    $item = $itemProperty.Value
+                    $itemType = Get-TextProperty $item 'type'
+                    if ($itemType -in @('agentMessage', 'agent_message')) {
+                        $text = Get-TextProperty $item 'text'
+                        if ($text) { $texts.Add($text) }
+                    }
+                }
+            }
+        }
+        if ($method -eq 'turn/completed') {
+            $paramsProperty = $event.PSObject.Properties['params']
+            if (-not $paramsProperty) { continue }
+            $turnProperty = $paramsProperty.Value.PSObject.Properties['turn']
+            if (-not $turnProperty) { continue }
+            $itemsProperty = $turnProperty.Value.PSObject.Properties['items']
+            if (-not $itemsProperty) { continue }
+            foreach ($item in @($itemsProperty.Value)) {
+                $itemType = Get-TextProperty $item 'type'
+                if ($itemType -in @('agentMessage', 'agent_message')) {
+                    $text = Get-TextProperty $item 'text'
+                    if ($text -and -not $texts.Contains($text)) { $texts.Add($text) }
+                }
+            }
+        }
+    }
+    return ($texts -join "`n")
+}
+
+function Invoke-AppServerWorker {
+    param(
+        [Parameter(Mandatory = $true)] [string] $RuntimePath,
+        [Parameter(Mandatory = $true)] [string] $Workdir,
+        [Parameter(Mandatory = $true)] [string] $Prompt,
+        [Parameter(Mandatory = $true)] [ValidateSet('read-only', 'workspace-write')] [string] $Sandbox
+    )
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $RuntimePath
+    $psi.WorkingDirectory = $Workdir
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    foreach ($argument in @('app-server', '--listen', 'stdio://', '--strict-config')) {
+        $psi.ArgumentList.Add([string]$argument)
+    }
+    $psi.Environment['CODEX_HOME'] = $script:CodexHome
+    $psi.Environment['SOL_LUNA_BROKER'] = "$($script:BrokerName)/$($script:BrokerVersion)"
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $psi
+    if (-not $process.Start()) { throw "Failed to start Codex app-server: $RuntimePath" }
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $events = [System.Collections.Generic.List[object]]::new()
+    $rawLines = [System.Collections.Generic.List[string]]::new()
+    $timeoutMs = [int64](Get-TimeoutSeconds) * 1000
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $nextId = 1
+
+    $initialize = [ordered]@{
+        jsonrpc = '2.0'
+        id = $nextId
+        method = 'initialize'
+        params = [ordered]@{
+            clientInfo = [ordered]@{ name = 'sol-luna-broker'; title = 'Sol Luna broker'; version = $script:BrokerVersion }
+            capabilities = @{}
+        }
+    }
+    $nextId++
+    Send-AppServerJson -Process $process -Value $initialize
+    $initResponse = Read-AppServerJson -Process $process -TimeoutMs ([Math]::Min(30000, [int]$timeoutMs))
+    $initError = if ($initResponse) { $initResponse.PSObject.Properties['error'] } else { $null }
+    if ($null -eq $initResponse -or $null -ne $initError) {
+        Stop-AppServerProcess $process
+        return [ordered]@{ exit_code = 1; timed_out = $false; events = @(); raw_lines = @(); thread_id = $null; host_model = $null; host_effort = $null; host_launch_record = $false; rerouted = @(); text = ''; stderr = $stderrTask.Result }
+    }
+
+    Send-AppServerJson -Process $process -Value ([ordered]@{ jsonrpc = '2.0'; method = 'initialized'; params = @{} })
+    $threadRequestId = $nextId
+    $nextId++
+    Send-AppServerJson -Process $process -Value ([ordered]@{
+        jsonrpc = '2.0'
+        id = $threadRequestId
+        method = 'thread/start'
+        params = [ordered]@{
+            model = $script:FixedModel
+            config = [ordered]@{ model_reasoning_effort = $script:FixedEffort }
+            cwd = $Workdir
+            ephemeral = $true
+            allowProviderModelFallback = $false
+            approvalPolicy = 'never'
+            sandbox = $Sandbox
+            sessionStartSource = 'startup'
+            threadSource = 'sol-luna-broker'
+        }
+    })
+
+    $startResponse = $null
+    while ($null -eq $startResponse -and -not $process.HasExited) {
+        $remaining = [int][Math]::Max(1, $timeoutMs - $watch.ElapsedMilliseconds)
+        if ($remaining -le 0) { break }
+        $event = Read-AppServerJson -Process $process -TimeoutMs $remaining
+        if ($null -eq $event) { break }
+        $events.Add($event)
+        $rawLines.Add(($event | ConvertTo-Json -Compress -Depth 40))
+        $idProperty = $event.PSObject.Properties['id']
+        if ($idProperty -and [string]$idProperty.Value -eq [string]$threadRequestId) { $startResponse = $event }
+    }
+
+    $threadId = $null
+    $hostModel = $null
+    $hostEffort = $null
+    $launchRecord = $false
+    $startError = if ($startResponse) { $startResponse.PSObject.Properties['error'] } else { $null }
+    if ($startResponse -and $null -eq $startError -and $startResponse.result) {
+        $threadId = Get-TextProperty $startResponse.result.thread 'id'
+        $hostModel = Normalize-ObservedValue (Get-TextProperty $startResponse.result 'model')
+        $hostEffort = Normalize-ObservedValue (Get-TextProperty $startResponse.result 'reasoningEffort')
+        $launchRecord = $threadId -and $hostModel -and $hostEffort -and
+            $hostModel.ToLowerInvariant() -eq $script:FixedModel -and
+            $hostEffort.ToLowerInvariant() -eq $script:FixedEffort
+    }
+
+    $turnCompletedEvent = $null
+    if ($threadId -and -not $process.HasExited -and $watch.ElapsedMilliseconds -lt $timeoutMs) {
+        $turnRequestId = $nextId
+        $nextId++
+        Send-AppServerJson -Process $process -Value ([ordered]@{
+            jsonrpc = '2.0'
+            id = $turnRequestId
+            method = 'turn/start'
+            params = [ordered]@{
+                threadId = $threadId
+                input = @([ordered]@{ type = 'text'; text = $Prompt })
+                model = $script:FixedModel
+                effort = $script:FixedEffort
+            }
+        })
+        $turnCompleted = $false
+        while (-not $turnCompleted -and -not $process.HasExited) {
+            $remaining = [int][Math]::Max(1, $timeoutMs - $watch.ElapsedMilliseconds)
+            if ($remaining -le 0) { break }
+            $event = Read-AppServerJson -Process $process -TimeoutMs $remaining
+            if ($null -eq $event) { break }
+            $events.Add($event)
+            $rawLines.Add(($event | ConvertTo-Json -Compress -Depth 40))
+            if ((Get-TextProperty $event 'method') -eq 'turn/completed') {
+                $turnCompletedEvent = $event
+                $turnCompleted = $true
+            }
+        }
+    }
+
+    $timedOut = $watch.ElapsedMilliseconds -ge $timeoutMs
+    $rerouted = @($events | Where-Object { (Get-TextProperty $_ 'method') -eq 'model/rerouted' })
+    $text = Get-AppServerMessageText -Events $events.ToArray()
+    Stop-AppServerProcess $process
+    $stderr = $stderrTask.Result
+    $turnStatus = $null
+    $turnError = $null
+    if ($turnCompletedEvent) {
+        $turnProperty = $turnCompletedEvent.PSObject.Properties['params']
+        if ($turnProperty) {
+            $turn = $turnProperty.Value.PSObject.Properties['turn']
+            if ($turn) {
+                $turnStatus = Get-TextProperty $turn.Value 'status'
+                $turnError = Get-TextProperty $turn.Value 'error'
+            }
+        }
+    }
+    $turnSucceeded = $null -ne $turnCompletedEvent -and $turnStatus -eq 'completed' -and -not $turnError
+    $exitCode = if ($timedOut) { $null } elseif ($turnSucceeded) { 0 } else { 1 }
+    return [ordered]@{
+        exit_code = $exitCode
+        timed_out = $timedOut
+        events = $events.ToArray()
+        raw_lines = $rawLines.ToArray()
+        thread_id = $threadId
+        host_model = $hostModel
+        host_effort = $hostEffort
+        host_launch_record = [bool]$launchRecord
+        rerouted = $rerouted
+        turn_completed = [bool]$turnCompletedEvent
+        turn_status = $turnStatus
+        turn_error = $turnError
+        text = $text
+        stderr = $stderr
+    }
+}
+
 function ConvertFrom-CodexEvents {
     param([Parameter(Mandatory = $true)] [string] $Stdout)
 
@@ -336,10 +574,18 @@ function Invoke-LunaTool {
         $prompt
     ) -join "`n"
 
-    $run = Invoke-CodexWorker -RuntimePath $runtime -Workdir $workdir -Prompt $guard -Sandbox $sandbox
-    $events = ConvertFrom-CodexEvents $run.stdout
-    $text = Get-CodexMessageText $events
-    $threadId = Get-ThreadId $events
+    if ($script:Transport -eq 'app-server') {
+        $run = Invoke-AppServerWorker -RuntimePath $runtime -Workdir $workdir -Prompt $guard -Sandbox $sandbox
+        $text = [string]$run.text
+        $threadId = $run.thread_id
+        $events = @($run.events)
+    } else {
+        $run = Invoke-CodexWorker -RuntimePath $runtime -Workdir $workdir -Prompt $guard -Sandbox $sandbox
+        $events = ConvertFrom-CodexEvents $run.stdout
+        $text = Get-CodexMessageText $events
+        $threadId = Get-ThreadId $events
+    }
+
     $selfModel = Get-FirstField -Text $text -Field 'SELF_REPORTED_MODEL'
     if (-not $selfModel) { $selfModel = Get-FirstField -Text $text -Field 'MODEL' }
     if (-not $selfModel) { $selfModel = Get-FirstLabeledField -Text $text -Label 'Effective model' }
@@ -349,30 +595,65 @@ function Invoke-LunaTool {
     if (-not $selfEffort) { $selfEffort = Get-FirstLabeledField -Text $text -Label 'Effort' }
     $selfEffort = Normalize-ObservedValue $selfEffort
 
+    $hostObservedModel = $null
+    $hostObservedEffort = $null
+    $identityProofKind = 'SELF_REPORT_ONLY'
+    $receiptKind = 'BROKER_RUN_RECEIPT'
     $identity = 'UNVERIFIED'
     $blocker = 'Self-report matches, but no host-observed identity telemetry was returned'
-    if ($run.timed_out) {
+    $status = 'STARTED_UNVERIFIED'
+    if ($script:Transport -eq 'app-server') {
+        $hostObservedModel = $run.host_model
+        $hostObservedEffort = $run.host_effort
+        $identityProofKind = 'ROLE_MAPPING_AND_LAUNCH_RECORD'
+        $receiptKind = 'HOST_LAUNCH_RECORD'
+        if ($run.timed_out) {
+            $identity = 'FAIL'
+            $status = 'BLOCKED'
+            $blocker = 'Codex app-server exceeded the broker timeout'
+        } elseif ($run.exit_code -ne 0) {
+            $identity = 'FAIL'
+            $status = 'BLOCKED'
+            $blocker = if ($run.turn_error) { "Codex turn failed: $($run.turn_error)" } else { 'Codex app-server turn did not complete successfully' }
+        } elseif (@($run.rerouted).Count -gt 0) {
+            $identity = 'FAIL'
+            $status = 'BLOCKED'
+            $blocker = 'Host emitted model/rerouted during the Luna turn'
+        } elseif (-not $run.host_launch_record) {
+            $identity = 'FAIL'
+            $status = 'BLOCKED'
+            $blocker = "Host launch record did not match requested model/effort: model=$hostObservedModel effort=$hostObservedEffort"
+        } else {
+            $identity = 'VERIFIED'
+            $status = 'HOST_VERIFIED'
+            $blocker = 'Fresh app-server launch record matched gpt-5.6-luna/max and no host reroute was observed'
+        }
+    } elseif ($run.timed_out) {
         $identity = 'FAIL'
+        $status = 'BLOCKED'
         $blocker = 'Codex runtime exceeded the broker timeout'
     } elseif ($run.exit_code -ne 0) {
         $identity = 'FAIL'
+        $status = 'BLOCKED'
         $blocker = "Codex runtime exited with code $($run.exit_code)"
     } elseif ($selfModel -and $selfModel.ToLowerInvariant() -ne $script:FixedModel) {
         $identity = 'FAIL'
+        $status = 'BLOCKED'
         $blocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
     } elseif ($selfEffort -and $selfEffort.ToLowerInvariant() -ne $script:FixedEffort) {
         $identity = 'FAIL'
+        $status = 'BLOCKED'
         $blocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
     } elseif (-not $selfModel -or -not $selfEffort) {
         $blocker = 'Effective model/effort was not observable in the worker response'
     }
 
-    $status = if ($identity -eq 'FAIL') { 'BLOCKED' } else { 'STARTED_UNVERIFIED' }
     $payload = [ordered]@{
         status = $status
         surface = 'HOST_MANAGED'
         task_id = $taskId
-        receipt_kind = 'BROKER_RUN_RECEIPT'
+        transport = $script:Transport
+        receipt_kind = $receiptKind
         receipt_id = if ($threadId) { "sol-luna-broker:${taskId}:$threadId" } else { $null }
         thread_id = $threadId
         runtime = $runtime
@@ -380,11 +661,11 @@ function Invoke-LunaTool {
         runtime_sha256 = $runtimeHash
         requested_model = $script:FixedModel
         requested_effort = $script:FixedEffort
-        host_observed_model = $null
-        host_observed_effort = $null
+        host_observed_model = $hostObservedModel
+        host_observed_effort = $hostObservedEffort
         self_reported_model = $selfModel
         self_reported_effort = $selfEffort
-        identity_proof_kind = 'SELF_REPORT_ONLY'
+        identity_proof_kind = $identityProofKind
         fresh = $true
         history = 'EXCLUDED'
         sandbox = $sandbox
@@ -401,7 +682,7 @@ function Invoke-LunaTool {
 function Get-ToolList {
     $tool = [ordered]@{
         name = 'sol_luna_exec'
-        description = 'Launch a fresh ephemeral Codex CLI worker fixed to gpt-5.6-luna/max. Returns a broker receipt; identity remains unverified without host telemetry.'
+        description = 'Launch a fresh ephemeral host-managed Codex worker fixed to gpt-5.6-luna/max. The default app-server transport returns a task-bound launch record and rejects host reroutes; set SOL_LUNA_TRANSPORT=cli only for legacy diagnostic mode.'
         inputSchema = [ordered]@{
             type = 'object'
             additionalProperties = $false
@@ -425,7 +706,7 @@ function Get-InitializeResult {
         protocolVersion = '2024-11-05'
         capabilities = @{ tools = @{ listChanged = $false } }
         serverInfo = @{ name = $script:BrokerName; version = $script:BrokerVersion }
-        instructions = 'sol_luna_exec always launches fresh gpt-5.6-luna/max. Run handshake_only=true first. A BROKER_RUN_RECEIPT and worker self-report never satisfy HOST_VERIFIED without host-observed identity telemetry.'
+        instructions = 'sol_luna_exec always launches fresh gpt-5.6-luna/max. The default app-server transport records host model/effort at thread/start and rejects model/rerouted events. Run handshake_only=true first. Worker self-report is advisory; the legacy CLI transport remains STARTED_UNVERIFIED.'
     }
 }
 

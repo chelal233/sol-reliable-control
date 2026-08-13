@@ -158,11 +158,14 @@ sol_luna_exec({
 ```
 
 The first call must use `handshake_only=true` and `sandbox="read-only"`. The
-broker pins `gpt-5.6-luna / max`, starts a fresh ephemeral CLI process, and
-returns a `BROKER_RUN_RECEIPT` containing the runtime version/hash and thread
-id. This is a transport receipt, not a `HOST_RECEIPT`; worker self-report is
-advisory. If host-observed model/effort is absent, record
-`STARTED_UNVERIFIED` and keep `HOST_VERIFIED` closed for high-risk work.
+default broker pins `gpt-5.6-luna / max`, starts a fresh ephemeral app-server
+thread, and returns a `HOST_LAUNCH_RECORD` containing the runtime version/hash,
+task-bound thread id, and host model/effort. Record `HOST_LAUNCH_RECORDED`
+before the turn check; if the same turn has no `model/rerouted` event, the
+result can be `HOST_VERIFIED` with `ROLE_MAPPING_AND_LAUNCH_RECORD`. Worker
+self-report remains advisory. Set `SOL_LUNA_TRANSPORT=cli` only for legacy
+diagnostics; it returns a `BROKER_RUN_RECEIPT` and remains
+`STARTED_UNVERIFIED`.
 
 For a host-managed app-server retest, capture the fresh ephemeral
 `thread/start` response instead of relying on the worker's self-report. The

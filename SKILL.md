@@ -154,16 +154,20 @@ the installed `sol_luna_broker` MCP server is the explicit `HOST_MANAGED`
 transport adapter. It is not a silent compatibility fallback and it is not a
 native subagent. The broker must:
 
-- launch a fresh ephemeral CLI process with `--ignore-user-config`,
-  `--strict-config`, `gpt-5.6-luna`, and `max`;
+- launch a fresh ephemeral app-server thread with `gpt-5.6-luna` and `max`;
+- capture the task-bound `thread/start` model/effort record and reject any
+  `model/rerouted` event;
 - validate the task id, workdir, sandbox, prompt size, and allowed roots before
   starting the process;
 - require `handshake_only=true` with `read-only` sandbox before implementation;
-- return a task-bound `BROKER_RUN_RECEIPT`, runtime version/hash, fresh/history
-  facts, and the worker result; and
-- label model self-report as advisory. A broker receipt is not a `HOST_RECEIPT`
-  and cannot satisfy `HOST_VERIFIED` without host-observed model/effort or an
-  authoritative host launch record.
+- return a task-bound `HOST_LAUNCH_RECORD`, runtime version/hash,
+  fresh/history facts, and the worker result; and
+- label model self-report as advisory. The app-server launch record can satisfy
+  `HOST_VERIFIED` only when it matches and no host reroute is observed.
+
+`SOL_LUNA_TRANSPORT=cli` is retained for legacy diagnostics. It launches the
+isolated CLI process and returns `BROKER_RUN_RECEIPT`, but remains
+`STARTED_UNVERIFIED` because it has no host identity telemetry.
 
 The caller invokes the fixed tool as:
 

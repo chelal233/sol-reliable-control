@@ -126,13 +126,11 @@ capability registry or an explicitly supported custom/managed surface. No
 local Sol config key is evidence of that host-side enablement.
 
 The installed Sol Luna MCP broker is an explicit managed transport for hosts
-where the native surface is not visible. It fixes `gpt-5.6-luna / max`, creates
-fresh ephemeral CLI runs, and returns a `BROKER_RUN_RECEIPT`. It can make the
-Luna lane operational without creating a user-owned task, but the broker
-receipt and worker self-report do not satisfy the host identity requirement.
-Until host-observed model/effort or an authoritative launch record is added,
-the result remains `STARTED_UNVERIFIED` and a `HOST_VERIFIED` high-risk plan
-must stay blocked.
+where the native surface is not visible. By default it fixes
+`gpt-5.6-luna / max`, creates a fresh ephemeral app-server thread, and returns
+a task-bound `HOST_LAUNCH_RECORD`. The CLI route remains available only when
+`SOL_LUNA_TRANSPORT=cli`; it returns `BROKER_RUN_RECEIPT` and remains
+`STARTED_UNVERIFIED` because it has no host identity telemetry.
 
 The app-server surface can supply the missing launch record without creating a
 user-owned task. Capture the fresh ephemeral `thread/start` response, including

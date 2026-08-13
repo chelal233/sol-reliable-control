@@ -64,8 +64,9 @@ current callable surfaces in this order:
 2. A `CUSTOM_ROLE` or `HOST_MANAGED` surface with an authoritative role/launch
    record for `luna-max-worker`.
 3. The installed `sol_luna_broker` MCP surface as an explicit managed
-   transport; it can start Luna but remains `STARTED_UNVERIFIED` without host
-   identity telemetry.
+   transport; its default app-server route returns a host launch record and
+   can reach `HOST_VERIFIED` after the no-reroute turn check. Its legacy CLI
+   route remains `STARTED_UNVERIFIED` without host identity telemetry.
 4. `collaboration.spawn_agent` only when its declared schema and model matrix
    contain the required Luna pair.
 
@@ -187,22 +188,23 @@ identity proof kind: SELF_REPORT_ONLY | UNKNOWN
 host observed model/effort: UNKNOWN unless the host supplies telemetry
 ```
 
-`BROKER_RUN_RECEIPT` is task-bound to the broker invocation but is not a
-`HOST_RECEIPT`. A matching worker self-report proves only that the requested
-prompt was answered; it does not prove the effective runtime identity. Treat a
-successful CLI broker run as `STARTED_UNVERIFIED` and keep `HOST_VERIFIED`
-closed until the host returns independent model/effort evidence or an
-authoritative launch record. This adapter may be the operational Luna path,
-but it must not silently downgrade a high-risk plan.
+The default app-server broker fixes `gpt-5.6-luna / max` and starts a fresh
+ephemeral thread. Its `thread/start` response is a task-bound
+`HOST_LAUNCH_RECORD` containing host model/effort. When that record matches and
+the same turn has no `model/rerouted` event, the normalized result may be
+`HOST_VERIFIED` with proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`. Set
+`SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; that route returns a
+`BROKER_RUN_RECEIPT`, has no host telemetry, and remains
+`STARTED_UNVERIFIED`. Neither route permits silent model substitution.
 
 The app-server `thread/start` response is a distinct host-managed launch
 record. It may be accepted as `ROLE_MAPPING_AND_LAUNCH_RECORD` only when all
 of these fields are captured from the same fresh ephemeral launch: exact
 requested `model`, exact `reasoningEffort`, task-bound thread id, and the
 absence of a `model/rerouted` event for that turn. A launch record that says
-Luna/max but is followed by a host reroute or an effective worker response
-that identifies another model/effort is `HOST_MODEL_MISMATCH`, not verified.
-The requested assignment and the effective turn identity are separate facts.
+Luna/max but is followed by a host reroute or another host-effective identity
+fact is `HOST_MODEL_MISMATCH`, not verified. A worker's generic self-report is
+advisory and does not override the host launch record.
 
 ## Gate evaluation
 
