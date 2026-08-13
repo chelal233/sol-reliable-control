@@ -165,6 +165,11 @@ native subagent. The broker must:
 - label model self-report as advisory. The app-server launch record can satisfy
   `HOST_VERIFIED` only when it matches and no host reroute is observed.
 
+Broker output is sanitized before it crosses the MCP boundary: user-home
+paths, host names, and credential-shaped values are redacted. This is an
+output privacy guard, not a substitute for the explicit allowed-root,
+handshake, or identity gates.
+
 `SOL_LUNA_TRANSPORT=cli` is retained for legacy diagnostics. It launches the
 isolated CLI process and returns `BROKER_RUN_RECEIPT`, but remains
 `STARTED_UNVERIFIED` because it has no host identity telemetry.

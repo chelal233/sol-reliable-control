@@ -11,9 +11,36 @@ $script:BrokerVersion = '1.0.0'
 $script:FixedModel = 'gpt-5.6-luna'
 $script:FixedEffort = 'max'
 $script:CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+$script:LocalHostName = [string]$env:COMPUTERNAME
+$script:LocalUserName = [string]$env:USERNAME
 $script:Transport = if ($env:SOL_LUNA_TRANSPORT) { $env:SOL_LUNA_TRANSPORT.ToLowerInvariant() } else { 'app-server' }
 if ($script:Transport -notin @('app-server', 'cli')) {
     throw 'SOL_LUNA_TRANSPORT must be app-server or cli'
+}
+
+function Protect-OutputText {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string] $Text
+    )
+
+    if ($null -eq $Text) { return $null }
+    $safe = $Text
+    # Keep evidence useful while hiding local usernames, host names, and
+    # credential-shaped values before anything crosses the MCP boundary.
+    $safe = [regex]::Replace($safe, '(?i)([A-Z]:\\Users\\)[^\\\r\n]+', '$1<user>')
+    $safe = [regex]::Replace($safe, '(?i)(/home/)[^/\r\n]+', '$1<user>')
+    $safe = [regex]::Replace($safe, '(?i)\bDESKTOP-[A-Z0-9-]+\b', '<host>')
+    if ($script:LocalHostName) {
+        $safe = [regex]::Replace($safe, "(?i)(?<![A-Za-z0-9_-])$([regex]::Escape($script:LocalHostName))(?![A-Za-z0-9_-])", '<host>')
+    }
+    if ($script:LocalUserName) {
+        $safe = [regex]::Replace($safe, "(?i)(?<![A-Za-z0-9_-])$([regex]::Escape($script:LocalUserName))(?![A-Za-z0-9_-])", '<user>')
+    }
+    $safe = [regex]::Replace($safe, '(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+', '$1 <redacted>')
+    $safe = [regex]::Replace($safe, '(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|secret)\b\s*[:=]\s*["'']?[^\s,;]+["'']?', '$1=<redacted>')
+    return $safe
 }
 
 function Send-JsonLine {
@@ -36,7 +63,7 @@ function Send-Result {
             id = $Id
             error = [ordered]@{
                 code = -32000
-                message = [string]$Result
+                message = Protect-OutputText ([string]$Result)
             }
         })
         return
@@ -97,11 +124,10 @@ function Get-RuntimePath {
 }
 
 function Get-AllowedRoots {
-    $raw = if ($env:SOL_LUNA_ALLOWED_ROOTS) {
-        $env:SOL_LUNA_ALLOWED_ROOTS
-    } else {
-        'E:\Sources\.codex-worktrees;E:\git\sol-reliable-control-worktrees;E:\git\sol-reliable-control'
+    if (-not $env:SOL_LUNA_ALLOWED_ROOTS) {
+        throw 'SOL_LUNA_ALLOWED_ROOTS must be configured; no implicit filesystem roots are used'
     }
+    $raw = $env:SOL_LUNA_ALLOWED_ROOTS
 
     $roots = @($raw -split ';' | Where-Object { $_ } | ForEach-Object {
         if (-not (Test-Path -LiteralPath $_ -PathType Container)) {
@@ -517,7 +543,7 @@ function Get-ShortStderr {
         [string] $Stderr
     )
 
-    $lines = @($Stderr -split "`r?`n" | Where-Object { $_ -and $_.Length -lt 500 })
+    $lines = @($Stderr -split "`r?`n" | Where-Object { $_ -and $_.Length -lt 500 } | ForEach-Object { Protect-OutputText $_ })
     if ($lines.Count -gt 12) { $lines = @($lines | Select-Object -First 12) }
     return $lines
 }
@@ -648,6 +674,7 @@ function Invoke-LunaTool {
         $blocker = 'Effective model/effort was not observable in the worker response'
     }
 
+    $blocker = Protect-OutputText $blocker
     $payload = [ordered]@{
         status = $status
         surface = 'HOST_MANAGED'
@@ -656,7 +683,7 @@ function Invoke-LunaTool {
         receipt_kind = $receiptKind
         receipt_id = if ($threadId) { "sol-luna-broker:${taskId}:$threadId" } else { $null }
         thread_id = $threadId
-        runtime = $runtime
+        runtime = Protect-OutputText $runtime
         runtime_version = $runtimeVersion
         runtime_sha256 = $runtimeHash
         requested_model = $script:FixedModel
@@ -673,7 +700,14 @@ function Invoke-LunaTool {
         timed_out = $run.timed_out
         identity = $identity
         blocker = $blocker
-        output = $text
+        output = Protect-OutputText $text
+        redaction = [ordered]@{
+            status = 'APPLIED'
+            scope = 'MCP output only'
+            local_paths = 'user-home redacted'
+            host_names = 'DESKTOP-* redacted'
+            credential_like_values = 'redacted'
+        }
         stderr_summary = @(Get-ShortStderr $run.stderr)
     }
     return (New-ToolResult -Payload $payload -IsError:($identity -eq 'FAIL'))

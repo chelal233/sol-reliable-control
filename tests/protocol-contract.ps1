@@ -35,6 +35,7 @@ $adaptersPath = Join-Path $Root 'references/runtime-adapters.md'
 $adapters = Get-Content -Raw -LiteralPath $adaptersPath
 $enablement = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/enablement.md')
 $registration = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/registration.md')
+$readme = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.md')
 
 Assert-Contains $skill 'LUNA_MAX' 'logical Luna route must be explicit'
 Assert-Contains $skill 'gpt-5.6-luna / max' 'Luna route must bind its requested model and effort'
@@ -114,6 +115,11 @@ Assert-Contains $registration 'THREAD_SURFACE_NOT_VISIBLE' 'registration guide m
 Assert-Contains $registration 'user-visible app task' 'registration guide must separate app tasks from native workers'
 Assert-Contains $registration 'sol_luna_broker' 'registration guide must expose the operational broker'
 Assert-Contains $registration 'broker-contract.ps1' 'registration guide must expose broker verification'
+
+Assert-Contains $readme 'README.en.md' 'README must expose the English companion'
+Assert-Contains $readme 'sol-advisor' 'README must record the Sol advisor reference project'
+Assert-Contains $readme 'codex-sol-control' 'README must record the Codex Sol control reference project'
+Assert-Contains $readme 'MCP' 'README must describe the managed broker surface'
 
 Assert-Contains $enablement 'BROKER_RUN_RECEIPT' 'enablement guide must classify broker receipts'
 Assert-Contains $enablement 'STARTED_UNVERIFIED' 'enablement guide must keep broker identity unverified'

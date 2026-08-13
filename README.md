@@ -2,6 +2,8 @@
 
 一个可独立安装的 Codex Sol 主控 skill：负责多代理任务的规划、执行 lane 路由、握手/身份门禁、紧凑证据回收和最终审核。
 
+语言 / Language: [简体中文](README.md) · [English](README.en.md)
+
 ## 功能说明
 
 - 一个清晰的 Sol 主控负责计划和最终结论；执行 lane 不接管主控，也不能批准整体任务。
@@ -30,7 +32,21 @@
 - `scripts/sol-luna-broker.ps1`：固定 Luna/max 的本地 STDIO MCP broker，含 fresh/范围/sandbox/receipt 门禁。
 - `tests/protocol-contract.ps1`：不依赖宿主的协议契约回归检查。
 - `tests/broker-contract.ps1`：MCP initialize、tools/list、ping 和固定 lane 的 broker 契约检查。
+- `tests/privacy-contract.ps1`：源码路径、凭据形态和 broker 输出脱敏契约检查。
+- `README.en.md`：English installation, routing, verification, and reference guide。
 - `agents/openai.yaml`：Codex skill 列表的界面元数据。
+
+## 参考项目与官方文档
+
+本项目借鉴了以下公开项目的 Sol/Advisor 编排思路，但不运行时依赖它们，
+也不复制其中的凭据、用户数据或工作树：
+
+- [DannyMac180/sol-advisor](https://github.com/DannyMac180/sol-advisor)：Sol advisor 的编排与审查思路参考。
+- [yehyakin/codex-sol-control](https://github.com/yehyakin/codex-sol-control)：早期 Codex Sol control 设计参考；本项目针对当前 Desktop app-server/MCP 宿主重新实现了身份门禁。
+
+宿主协议以官方文档为准：[MCP](https://learn.chatgpt.com/docs/extend/mcp)、
+[App Server](https://learn.chatgpt.com/docs/app-server)、
+[Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)。
 
 ## 安装
 
@@ -45,11 +61,12 @@
 ```toml
 [mcp_servers.sol_luna_broker]
 command = "pwsh"
-args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\PC\\.codex\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "<CODEX_HOME>\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
 enabled = true
 
 [mcp_servers.sol_luna_broker.env]
-SOL_LUNA_ALLOWED_ROOTS = "E:\\Sources\\.codex-worktrees;E:\\git\\sol-reliable-control-worktrees;E:\\git\\sol-reliable-control"
+SOL_LUNA_ALLOWED_ROOTS = "<approved-worktree-root>;<sol-reliable-control-worktree-root>;<sol-reliable-control-root>"
 ```
 
-重启 Codex 后，先调用 `sol_luna_exec` 并保持 `handshake_only=true`；只有收到结构化结果后，Sol 才能决定是否继续。完整注册和证据规则见 [references/registration.md](references/registration.md)。
+保存前将尖括号占位符替换为本机实际路径；broker 不再内置任何默认文件系统根目录。
+重启 Codex 后，先调用 `sol_luna_exec` 并保持 `handshake_only=true`；只有收到结构化结果后，Sol 才能决定是否继续。broker 会对 MCP 输出中的用户目录、主机名和凭据形态值做脱敏。完整注册和证据规则见 [references/registration.md](references/registration.md)。

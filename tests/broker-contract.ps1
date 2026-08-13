@@ -33,6 +33,9 @@ Assert-Contains $scriptText 'SELF_REPORT_ONLY' 'broker must keep self-report ide
 Assert-Contains $scriptText 'Effective model' 'broker must parse labeled effective-model self-reports'
 Assert-Contains $scriptText 'Normalize-ObservedValue' 'broker must treat explicit unknown self-report markers as unobserved'
 Assert-Contains $scriptText 'selfModel -and $selfModel.ToLowerInvariant()' 'broker must block an explicit model mismatch even when effort is absent'
+Assert-Contains $scriptText 'Protect-OutputText' 'broker must sanitize output before it crosses MCP'
+Assert-Contains $scriptText 'redaction = [ordered]@{' 'broker must expose redaction status'
+Assert-Contains $scriptText 'SOL_LUNA_ALLOWED_ROOTS must be configured' 'broker must require explicit filesystem roots'
 
 $requests = @(
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}',

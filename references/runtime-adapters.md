@@ -206,6 +206,13 @@ Luna/max but is followed by a host reroute or another host-effective identity
 fact is `HOST_MODEL_MISMATCH`, not verified. A worker's generic self-report is
 advisory and does not override the host launch record.
 
+The broker applies output-only privacy redaction before returning MCP content:
+Windows and Unix user-home path segments, `DESKTOP-*` host names (and the
+current host name when available), and credential-shaped values are replaced.
+Raw runtime paths, stderr, prompts, and worker output are never returned
+without this sanitization. Redaction does not store or transmit secrets and
+does not weaken the workdir allowlist or identity gate.
+
 ## Gate evaluation
 
 `HOST_VERIFIED` requires all of the following:

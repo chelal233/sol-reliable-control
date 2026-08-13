@@ -137,15 +137,19 @@ server to the host's `config.toml`:
 ```toml
 [mcp_servers.sol_luna_broker]
 command = "pwsh"
-args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\PC\\.codex\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "<CODEX_HOME>\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
 enabled = true
 
 [mcp_servers.sol_luna_broker.env]
-SOL_LUNA_ALLOWED_ROOTS = "E:\\Sources\\.codex-worktrees;E:\\git\\sol-reliable-control-worktrees;E:\\git\\sol-reliable-control"
+SOL_LUNA_ALLOWED_ROOTS = "<approved-worktree-root>;<sol-reliable-control-worktree-root>;<sol-reliable-control-root>"
 ```
 
-Set `SOL_LUNA_ALLOWED_ROOTS` in the server environment when the default roots
-do not contain the target worktree. The broker's only tool is:
+Replace every angle-bracket placeholder with an approved path before saving.
+There are no implicit filesystem roots and no machine-specific paths in this
+repository. Set `SOL_LUNA_ALLOWED_ROOTS` in the server environment when the
+configured roots do not contain the target worktree. Broker responses redact
+user-home paths, host names, and credential-shaped values before crossing the
+MCP boundary. The broker's only tool is:
 
 ```text
 sol_luna_exec({
@@ -198,7 +202,7 @@ or in the global path only when that host/version documents global custom-role
 discovery:
 
 ```text
-C:/Users/PC/.codex/agents/luna-max-worker.toml
+<CODEX_HOME>/agents/luna-max-worker.toml
 ```
 
 File contents:
