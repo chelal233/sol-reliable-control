@@ -106,6 +106,7 @@ Assert-Contains $registration 'refresh' 'registration guide must require capabil
 Assert-Contains $registration 'HOST_REGISTRATION_REQUIRED' 'registration guide must distinguish host registration from task block'
 Assert-Contains $registration 'agent_id' 'registration guide must classify native agent handles'
 Assert-Contains $registration 'HOST_VERIFIED' 'registration guide must retain the high-risk identity gate'
+Assert-Contains $registration 'HOST_LAUNCH_RECORDED' 'registration guide must define the app-server launch retest state'
 Assert-Contains $registration 'multi_agent_v1__spawn_agent' 'registration guide must cover the alternate native wrapper'
 Assert-Contains $registration 'fork_context: false' 'registration guide must cover the alternate fresh-context field'
 Assert-Contains $registration 'AGENT_HANDLE' 'registration guide must classify returned agent ids'

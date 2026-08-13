@@ -13,6 +13,7 @@
 - 握手失败保持 `BLOCKED`，不会让 Sol 直接接管实现，也不会把失败伪装成 worker 结果。
 - 原生 Luna 调度优先使用当前线程可见的 `multi_agent_v1__spawn_agent`（`fork_context=false`、`gpt-5.6-luna`、`max`）；`collaboration.spawn_agent` 是独立的旧/兼容 schema，不能混用字段或把它的 Sol/Terra 枚举当成全局能力结论。
 - 原生 surface 不可见时，正式使用 `scripts/sol-luna-broker.ps1` 提供的 `HOST_MANAGED` MCP 主启动链路；它固定启动 fresh ephemeral `gpt-5.6-luna / max`，但 `BROKER_RUN_RECEIPT` 和 worker 自报仍不能替代 `HOST_RECEIPT` / `HOST_VERIFIED`。
+- app-server 的 fresh `thread/start` 若返回精确 `model=gpt-5.6-luna`、`reasoningEffort=max`，可记录为 `HOST_LAUNCH_RECORDED`；只有同一 turn 没有 `model/rerouted` 且没有冲突的宿主有效身份证据，才升级为 `HOST_VERIFIED`。
 - capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到 Luna 而当前线程看不到时，返回 `THREAD_SURFACE_NOT_VISIBLE`，要求 surface migration/rebind 或 fresh controller thread。
 - `FALLBACK` 是显式恢复分支：允许任意安全兼容 lane，但必须标记 `UNVERIFIED`，且只用于低风险、窄范围、可独立验证的任务。
 - 只传结构化 packet、验证摘要和 evidence 路径，不导入 worker 全量推理，避免污染主控上下文。
@@ -35,7 +36,7 @@
 
 将仓库目录复制到 `$CODEX_HOME/skills/sol-reliable-control`，或使用 Codex skill 安装器从本仓库安装。
 
-运行时仍由宿主提供 native worker dispatch、模型身份和 `HOST_RECEIPT`；当 native surface 不可见时，可注册本包的 MCP broker 作为固定 Luna/max 的操作主链路。broker 自己的 receipt 和 self-report 仍按 `STARTED_UNVERIFIED` 处理，不能绕过高风险身份门。
+运行时仍由宿主提供 native worker dispatch、模型身份和 `HOST_RECEIPT`；当 native surface 不可见时，可注册本包的 MCP broker 作为固定 Luna/max 的操作主链路。CLI broker 的 receipt 和 self-report 仍按 `STARTED_UNVERIFIED` 处理；app-server launch record 是独立的宿主证据层，不能把“分配到 Luna”与“turn 有效身份已验证”混为一谈。
 
 ## MCP broker 注册
 

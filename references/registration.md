@@ -164,6 +164,14 @@ id. This is a transport receipt, not a `HOST_RECEIPT`; worker self-report is
 advisory. If host-observed model/effort is absent, record
 `STARTED_UNVERIFIED` and keep `HOST_VERIFIED` closed for high-risk work.
 
+For a host-managed app-server retest, capture the fresh ephemeral
+`thread/start` response instead of relying on the worker's self-report. The
+response is usable as `HOST_LAUNCH_RECORDED` only when its task-bound thread id
+reports exact `gpt-5.6-luna` and `max`. Continue the same turn and reject the
+record if a `model/rerouted` notification appears. A launch assignment is not
+the same as effective turn identity; keep the high-risk gate closed until this
+check completes.
+
 The broker contract can be checked without launching a worker:
 
 ```powershell

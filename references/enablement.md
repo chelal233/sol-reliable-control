@@ -134,6 +134,13 @@ Until host-observed model/effort or an authoritative launch record is added,
 the result remains `STARTED_UNVERIFIED` and a `HOST_VERIFIED` high-risk plan
 must stay blocked.
 
+The app-server surface can supply the missing launch record without creating a
+user-owned task. Capture the fresh ephemeral `thread/start` response, including
+its task-bound thread id, `model`, and `reasoningEffort`. Record
+`HOST_LAUNCH_RECORDED` when those fields exactly equal Luna/max. This is a
+separate retest state: inspect the same turn for `model/rerouted` or another
+host conflict before promoting it to `HOST_VERIFIED`.
+
 ## Acceptance gate
 
 Luna enablement is complete only when:
@@ -142,5 +149,6 @@ Luna enablement is complete only when:
 2. The surface declares the fresh-context and controller-history semantics.
 3. A task-bound `HOST_RECEIPT` is supported.
 4. The host can observe and return `gpt-5.6-luna` plus `max` independently of
-   worker self-report.
+   worker self-report, either as `HOST_OBSERVED_MODEL_EFFORT` or an
+   authoritative app-server launch record.
 5. The bounded identity handshake passes before implementation starts.

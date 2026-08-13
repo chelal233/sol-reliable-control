@@ -268,7 +268,7 @@ Status: PASS | PASS_WITH_WARNING | BLOCKED
 Summary: <what happened>
 Changed or produced: <exact paths, artifacts, or None>
 Verification: <checks, exit status, concise result>
-Routing verdict: HOST_VERIFIED | HOST_DISPATCHED_UNATTESTED | HOST_MODEL_MISMATCH | DISPATCH_UNCONFIRMED
+Routing verdict: HOST_VERIFIED | HOST_LAUNCH_RECORDED | HOST_DISPATCHED_UNATTESTED | HOST_MODEL_MISMATCH | DISPATCH_UNCONFIRMED
 Self-report warning: NONE | MISMATCH | UNKNOWN
 Evidence: <artifact or result path bound to the acceptance conditions>
 Review verdict: PASS | FIX | BLOCKED | NOT_RUN
