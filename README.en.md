@@ -12,10 +12,23 @@ Language: [简体中文](README.md) · [English](README.en.md)
 - `SOL_XHIGH`: cross-cutting planning, arbitration, or final review; requests
   `gpt-5.6-sol / xhigh`.
 
-The default managed Luna path is `mcp__sol_luna_broker__sol_luna_exec`. It
-starts a fresh ephemeral app-server thread, captures the host launch record,
-and rejects `model/rerouted` events. The legacy CLI transport is diagnostic
-only (`SOL_LUNA_TRANSPORT=cli`) and remains `STARTED_UNVERIFIED`.
+`LUNA_MAX` uses **Native-first -> MCP-second** routing. Priority 1 is a native
+subagent surface that is visible to the current thread and matches the worker
+contract. The canonical surface is `multi_agent_v1__spawn_agent`; a future equivalent
+qualifies only if the host declares and verifies its contract, schema, requested
+model, effort, and identity evidence.
+
+Use `mcp__sol_luna_broker__sol_luna_exec` as Priority 2 only when the native
+surface is not visible, its schema or requested `gpt-5.6-luna / max` does not
+match, or native preflight cannot obtain the required host evidence. This MCP
+route is `HOST_MANAGED`: MCP is not a native subagent. It is not a silent model fallback.
+If both routes fail, retain the requested `gpt-5.6-luna / max` and return
+`BLOCKED` under the existing failure rules.
+
+The managed MCP broker starts a fresh ephemeral app-server thread, captures
+the host launch record, and rejects `model/rerouted` events. The legacy CLI
+transport is diagnostic only (`SOL_LUNA_TRANSPORT=cli`) and remains
+`STARTED_UNVERIFIED`.
 
 ## Three-layer verification
 

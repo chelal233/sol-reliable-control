@@ -36,6 +36,7 @@ $adapters = Get-Content -Raw -LiteralPath $adaptersPath
 $enablement = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/enablement.md')
 $registration = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/registration.md')
 $readme = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.md')
+$readmeEn = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.en.md')
 
 Assert-Contains $skill 'LUNA_MAX' 'logical Luna route must be explicit'
 Assert-Contains $skill 'gpt-5.6-luna / max' 'Luna route must bind its requested model and effort'
@@ -141,6 +142,16 @@ Assert-Contains $readme 'sol-advisor' 'README must record the Sol advisor refere
 Assert-Contains $readme 'codex-sol-control' 'README must record the Codex Sol control reference project'
 Assert-Contains $readme 'MCP' 'README must describe the managed broker surface'
 Assert-Contains $readme '原生优先、MCP 次选' 'README must state the native-first route in its existing Chinese style'
+
+Assert-Contains $readmeEn 'Native-first -> MCP-second' 'English README must state the Luna route priority'
+Assert-Contains $readmeEn 'multi_agent_v1__spawn_agent' 'English README must name the canonical native surface'
+Assert-Contains $readmeEn 'future equivalent' 'English README must require host-declared and verified future native surfaces'
+Assert-Contains $readmeEn 'native preflight cannot obtain the required host evidence' 'English README must bound use of the managed MCP route'
+Assert-Contains $readmeEn 'HOST_MANAGED' 'English README must classify the MCP route as host-managed'
+Assert-Contains $readmeEn 'MCP is not a native subagent' 'English README must keep MCP distinct from native execution'
+Assert-Contains $readmeEn 'not a silent model fallback' 'English README must forbid silent model fallback'
+Assert-Contains $readmeEn 'retain the requested `gpt-5.6-luna / max`' 'English README must preserve the requested Luna model and effort on route failure'
+Assert-Contains $readmeEn 'BLOCKED' 'English README must fail closed when both Luna routes fail'
 
 Assert-Contains $enablement 'BROKER_RUN_RECEIPT' 'enablement guide must classify broker receipts'
 Assert-Contains $enablement 'STARTED_UNVERIFIED' 'enablement guide must keep broker identity unverified'
