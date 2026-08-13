@@ -102,7 +102,9 @@ adapters with separate evidence rules.
 `LUNA_MAX` capability is mandatory. If its preflight returns `UNAVAILABLE` or
 `UNKNOWN`, stop at the handshake gate and return `HOST_ENABLEMENT_REQUIRED`;
 do not treat generic `BLOCKED` as a completed deployment, and do not substitute
-another model.
+another model. The skill and `config.toml` can state this requirement but cannot
+register a model in the host-owned `collaboration.spawn_agent` surface; see
+[references/enablement.md](references/enablement.md) for the configuration boundary.
 
 For `NATIVE_GENERIC`, `fork_context: false` means fresh context and excluded
 controller history in the current generic spawn schema. A returned `agent_id`

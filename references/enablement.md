@@ -85,6 +85,28 @@ preflight only after the host supplies new enablement evidence. A new
 user-owned task is not an enablement mechanism and must not be created to
 obtain Luna.
 
+## Configuration boundary
+
+`config.toml` is a top-level Codex session configuration. Its `model` and
+`model_reasoning_effort` settings can select the current controller's model and
+effort when the host permits that model. It does not add a model to the
+`collaboration.spawn_agent` host allowlist, change that tool's schema, or create
+a task-bound `HOST_RECEIPT` and host-observed identity evidence.
+
+Do not change the Sol controller's `model` to `gpt-5.6-luna` as a way to enable
+the worker: that changes the controller identity and still does not enable the
+child surface. A separate top-level CLI session selected with Luna is also not
+a native Sol worker and cannot satisfy this protocol's no-user-owned-task
+boundary.
+
+`agents/openai.yaml` is skill UI metadata, not a host model registration.
+`.codex/agents/*.toml` can describe a custom role only when the selected host
+explicitly loads and reports that role; it does not change the current
+`NATIVE_GENERIC` allowlist. When `collaboration.spawn_agent` exposes only
+`gpt-5.6-sol` and `gpt-5.6-terra`, the required change belongs to the host
+capability registry or an explicitly supported custom/managed surface. No
+local Sol config key is evidence of that host-side enablement.
+
 ## Acceptance gate
 
 Luna enablement is complete only when:

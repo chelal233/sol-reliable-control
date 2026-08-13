@@ -103,6 +103,15 @@ gate; it is not a mechanism for hiding a missing mandatory Luna capability.
 When Luna enablement is required, `Fallback: BLOCKED` remains in force and a
 new user-owned task must not be created as an enablement workaround.
 
+## Configuration boundary
+
+`config.toml` controls the top-level Codex session's model/effort selection; it
+does not extend the host-owned `collaboration.spawn_agent` model allowlist or
+produce worker receipt/identity evidence. Changing the Sol controller to Luna
+would change the controller identity, not enable the child lane. The enablement
+request must therefore be handled by the host capability registry or a host
+surface that explicitly supports custom/managed role registration.
+
 ## Native worker launch
 
 Use the host's native generic worker surface when available:

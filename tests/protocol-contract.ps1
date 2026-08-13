@@ -74,6 +74,11 @@ Assert-Contains $enablement 'gpt-5.6-luna / max' 'enablement packet must bind th
 Assert-Contains $enablement 'NOT_ENABLED' 'host must report a missing capability explicitly'
 Assert-Contains $enablement 'HOST_ENABLEMENT_REQUIRED' 'enablement failure must be actionable'
 Assert-Contains $enablement 'no user-owned task' 'enablement must not use a user-owned task as a substitute'
+Assert-Contains $enablement 'config.toml' 'config boundary must be documented'
+Assert-Contains $enablement 'top-level Codex session' 'config.toml must be scoped to the top-level session'
+Assert-Contains $enablement 'does not add a model' 'config.toml must not be treated as a worker allowlist'
+Assert-Contains $enablement 'collaboration.spawn_agent' 'host-owned surface must be named explicitly'
+Assert-Contains $protocol 'configuration boundary' 'protocol must explain config versus host ownership'
 
 Assert-NotContains $skill 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
 Assert-NotContains $protocol 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
