@@ -139,6 +139,13 @@ its task-bound thread id, `model`, and `reasoningEffort`. Record
 separate retest state: inspect the same turn for `model/rerouted` or another
 host conflict before promoting it to `HOST_VERIFIED`.
 
+When the implementation turn may outlive the caller's MCP deadline, use the
+broker's explicit asynchronous mode after this handshake: submit
+`execution_mode="async"`, retain the returned `HOST_JOB_RECEIPT`/`job_id`, and
+poll `sol_luna_poll` until the nested result is `COMPLETED` or `FAILED`. The
+job receipt proves submission and fresh context only; it does not replace the
+nested app-server identity evidence.
+
 ## Acceptance gate
 
 Luna enablement is complete only when:

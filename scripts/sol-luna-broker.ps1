@@ -1,18 +1,22 @@
 #!/usr/bin/env pwsh
 
 [CmdletBinding()]
-param()
+param(
+    [switch]$Worker
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:BrokerName = 'sol-luna-broker'
-$script:BrokerVersion = '1.0.0'
+$script:BrokerVersion = '1.1.0'
+$script:BrokerScriptPath = $PSCommandPath
 $script:FixedModel = 'gpt-5.6-luna'
 $script:FixedEffort = 'max'
 $script:CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
 $script:LocalHostName = [string]$env:COMPUTERNAME
 $script:LocalUserName = [string]$env:USERNAME
+$script:AsyncChildren = @{}
 $script:Transport = if ($env:SOL_LUNA_TRANSPORT) { $env:SOL_LUNA_TRANSPORT.ToLowerInvariant() } else { 'app-server' }
 if ($script:Transport -notin @('app-server', 'cli')) {
     throw 'SOL_LUNA_TRANSPORT must be app-server or cli'
@@ -97,6 +101,22 @@ function Get-BoolProperty {
     $property = $Object.PSObject.Properties[$Name]
     if (-not $property) { return $Default }
     return [bool]$property.Value
+}
+
+function Get-IntegerProperty {
+    param(
+        [Parameter(Mandatory = $true)] [object] $Object,
+        [Parameter(Mandatory = $true)] [string] $Name,
+        [int] $Default = 0
+    )
+
+    $property = $Object.PSObject.Properties[$Name]
+    if (-not $property -or $null -eq $property.Value) { return $Default }
+    $parsed = 0
+    if (-not [int]::TryParse([string]$property.Value, [ref]$parsed)) {
+        throw "$Name must be an integer"
+    }
+    return $parsed
 }
 
 function Get-RuntimePath {
@@ -564,6 +584,188 @@ function New-ToolResult {
     }
 }
 
+function Get-JobRoot {
+    $root = if ($env:SOL_LUNA_JOB_ROOT) {
+        $env:SOL_LUNA_JOB_ROOT
+    } else {
+        Join-Path ([System.IO.Path]::GetTempPath()) 'sol-luna-broker'
+    }
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+        [System.IO.Directory]::CreateDirectory($root) | Out-Null
+    }
+    return (Resolve-Path -LiteralPath $root).Path.TrimEnd('\')
+}
+
+function Write-JobStateAtomic {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Path,
+        [Parameter(Mandatory = $true)] [object] $State
+    )
+
+    $tempPath = "$Path.$PID.tmp"
+    $json = $State | ConvertTo-Json -Compress -Depth 60
+    [System.IO.File]::WriteAllText($tempPath, $json, [System.Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $tempPath -Destination $Path -Force
+}
+
+function Read-JobState {
+    param([Parameter(Mandatory = $true)] [string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try { return (Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json) }
+    catch { return $null }
+}
+
+function Start-AsyncLunaJob {
+    param([Parameter(Mandatory = $true)] [object] $Arguments)
+
+    $taskId = Get-TextProperty $Arguments 'task_id'
+    $jobId = [Guid]::NewGuid().ToString('N')
+    $jobRoot = Get-JobRoot
+    $jobPath = Join-Path $jobRoot "$jobId.json"
+    $receiptId = "sol-luna-broker:${taskId}:$jobId"
+    $startedAt = [DateTime]::UtcNow.ToString('o')
+    $initialState = [ordered]@{
+        schema = 1
+        status = 'QUEUED'
+        task_id = $taskId
+        job_id = $jobId
+        receipt_id = $receiptId
+        receipt_kind = 'HOST_JOB_RECEIPT'
+        submitted_at = $startedAt
+        updated_at = $startedAt
+        pid = $null
+        result = $null
+        error = $null
+    }
+    Write-JobStateAtomic -Path $jobPath -State $initialState
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = Join-Path $PSHOME 'pwsh.exe'
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    foreach ($argument in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:BrokerScriptPath, '-Worker')) {
+        $psi.ArgumentList.Add([string]$argument)
+    }
+    $psi.Environment['SOL_LUNA_WORKER_JOB_FILE'] = $jobPath
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $psi
+    if (-not $process.Start()) {
+        $initialState.status = 'FAILED'
+        $initialState.error = 'Worker process failed to start'
+        $initialState.updated_at = [DateTime]::UtcNow.ToString('o')
+        Write-JobStateAtomic -Path $jobPath -State $initialState
+        throw 'Failed to start asynchronous Luna worker'
+    }
+
+    $initialState.pid = $process.Id
+    $initialState.status = 'RUNNING'
+    $initialState.updated_at = [DateTime]::UtcNow.ToString('o')
+    Write-JobStateAtomic -Path $jobPath -State $initialState
+    $childArguments = [ordered]@{}
+    foreach ($property in $Arguments.PSObject.Properties) {
+        if ($property.Name -ne 'execution_mode') { $childArguments[$property.Name] = $property.Value }
+    }
+    $childArguments.execution_mode = 'sync'
+    $process.StandardInput.WriteLine(($childArguments | ConvertTo-Json -Compress -Depth 40))
+    $process.StandardInput.Close()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $script:AsyncChildren[$jobId] = [ordered]@{ process = $process; stdout = $stdoutTask; stderr = $stderrTask }
+
+    return (New-ToolResult -Payload ([ordered]@{
+        status = 'QUEUED'
+        surface = 'HOST_MANAGED'
+        task_id = $taskId
+        transport = $script:Transport
+        execution_mode = 'async'
+        receipt_kind = 'HOST_JOB_RECEIPT'
+        receipt_id = $receiptId
+        job_id = $jobId
+        poll_tool = 'sol_luna_poll'
+        submitted_at = $startedAt
+        requested_model = $script:FixedModel
+        requested_effort = $script:FixedEffort
+        fresh = $true
+        history = 'EXCLUDED'
+        identity = 'PENDING'
+        blocker = 'Worker is running asynchronously; poll the task-bound job receipt for the result'
+        redaction = [ordered]@{
+            status = 'APPLIED'
+            scope = 'MCP output only'
+            local_paths = 'user-home redacted'
+            host_names = 'DESKTOP-* redacted'
+            credential_like_values = 'redacted'
+        }
+    }))
+}
+
+function Invoke-PollTool {
+    param([Parameter(Mandatory = $true)] [object] $Arguments)
+
+    $taskId = Get-TextProperty $Arguments 'task_id'
+    $jobId = Get-TextProperty $Arguments 'job_id'
+    $waitSeconds = Get-IntegerProperty $Arguments 'wait_seconds' 0
+    if (-not $taskId -or $taskId -notmatch '^[A-Za-z0-9._-]{1,128}$') {
+        throw 'task_id must match ^[A-Za-z0-9._-]{1,128}$'
+    }
+    if (-not $jobId -or $jobId -notmatch '^[a-f0-9]{32}$') { throw 'job_id must be a 32-character hexadecimal id' }
+    if ($waitSeconds -lt 0 -or $waitSeconds -gt 30) { throw 'wait_seconds must be an integer from 0 to 30' }
+
+    $jobPath = Join-Path (Get-JobRoot) "$jobId.json"
+    $deadline = [DateTime]::UtcNow.AddSeconds($waitSeconds)
+    $state = $null
+    do {
+        $state = Read-JobState -Path $jobPath
+        if ($state -and [string]$state.task_id -ne $taskId) { throw 'job receipt does not match task_id' }
+        if ($state -and [string]$state.status -notin @('QUEUED', 'RUNNING')) { break }
+        if ($state -and $state.pid -and -not (Get-Process -Id ([int]$state.pid) -ErrorAction SilentlyContinue)) {
+            $state = [ordered]@{
+                schema = 1; status = 'FAILED'; task_id = $taskId; job_id = $jobId
+                receipt_id = [string]$state.receipt_id; receipt_kind = 'HOST_JOB_RECEIPT'
+                submitted_at = [string]$state.submitted_at; updated_at = [DateTime]::UtcNow.ToString('o')
+                pid = [int]$state.pid; result = $null; error = 'Worker exited without a task-bound result'
+            }
+            Write-JobStateAtomic -Path $jobPath -State $state
+            break
+        }
+        if ([DateTime]::UtcNow -ge $deadline) { break }
+        Start-Sleep -Milliseconds 250
+    } while ($true)
+
+    if ($null -eq $state) { throw 'job receipt was not found' }
+    $status = [string]$state.status
+    $payload = [ordered]@{
+        status = if ($status -eq 'COMPLETED') { 'COMPLETED' } elseif ($status -eq 'FAILED') { 'FAILED' } else { 'PENDING' }
+        surface = 'HOST_MANAGED'
+        task_id = $taskId
+        execution_mode = 'async'
+        receipt_kind = [string]$state.receipt_kind
+        receipt_id = [string]$state.receipt_id
+        job_id = $jobId
+        submitted_at = [string]$state.submitted_at
+        updated_at = [string]$state.updated_at
+        fresh = $true
+        history = 'EXCLUDED'
+        identity = if ($status -eq 'COMPLETED' -and $state.result -and $state.result.structuredContent) { [string]$state.result.structuredContent.identity } else { 'PENDING' }
+        requested_model = $script:FixedModel
+        requested_effort = $script:FixedEffort
+        result = $state.result
+        blocker = if ($status -eq 'FAILED') { Protect-OutputText ([string]$state.error) } elseif ($status -in @('QUEUED', 'RUNNING')) { 'Worker is still running; poll again with the same task_id and job_id' } else { $null }
+        redaction = [ordered]@{
+            status = 'APPLIED'
+            scope = 'MCP output only'
+            local_paths = 'user-home redacted'
+            host_names = 'DESKTOP-* redacted'
+            credential_like_values = 'redacted'
+        }
+    }
+    return (New-ToolResult -Payload $payload -IsError:($status -eq 'FAILED'))
+}
+
 function Invoke-LunaTool {
     param([Parameter(Mandatory = $true)] [object] $Arguments)
 
@@ -573,6 +775,8 @@ function Invoke-LunaTool {
     $sandbox = Get-TextProperty $Arguments 'sandbox'
     if (-not $sandbox) { $sandbox = 'read-only' }
     $handshakeOnly = Get-BoolProperty $Arguments 'handshake_only' $true
+    $executionMode = Get-TextProperty $Arguments 'execution_mode'
+    if (-not $executionMode) { $executionMode = 'sync' }
 
     if (-not $taskId -or $taskId -notmatch '^[A-Za-z0-9._-]{1,128}$') {
         throw 'task_id must match ^[A-Za-z0-9._-]{1,128}$'
@@ -581,8 +785,15 @@ function Invoke-LunaTool {
     if (-not $prompt -or $prompt.Length -gt 20000) { throw 'prompt is required and must be <= 20000 characters' }
     if ($sandbox -notin @('read-only', 'workspace-write')) { throw 'sandbox must be read-only or workspace-write' }
     if ($handshakeOnly -and $sandbox -ne 'read-only') { throw 'handshake_only requires read-only sandbox' }
+    if ($executionMode -notin @('sync', 'async')) { throw 'execution_mode must be sync or async' }
+    if ($executionMode -eq 'async' -and $handshakeOnly) {
+        throw 'async execution is for implementation packets; run the identity-only handshake synchronously first'
+    }
 
     $workdir = Resolve-AllowedWorkdir $workdirInput
+    if ($executionMode -eq 'async') {
+        return (Start-AsyncLunaJob -Arguments $Arguments)
+    }
     $runtime = Get-RuntimePath
     $runtimeHash = (Get-FileHash -LiteralPath $runtime -Algorithm SHA256).Hash
     $runtimeVersion = ((& $runtime --version 2>$null | Select-Object -First 1) -join '').Trim()
@@ -716,7 +927,7 @@ function Invoke-LunaTool {
 function Get-ToolList {
     $tool = [ordered]@{
         name = 'sol_luna_exec'
-        description = 'Launch a fresh ephemeral host-managed Codex worker fixed to gpt-5.6-luna/max. The default app-server transport returns a task-bound launch record and rejects host reroutes; set SOL_LUNA_TRANSPORT=cli only for legacy diagnostic mode.'
+        description = 'Launch a fresh ephemeral host-managed Codex worker fixed to gpt-5.6-luna/max. Use execution_mode=async for long-running implementation packets, then poll the task-bound job receipt with sol_luna_poll. The default app-server transport returns a task-bound launch record and rejects host reroutes; set SOL_LUNA_TRANSPORT=cli only for legacy diagnostic mode.'
         inputSchema = [ordered]@{
             type = 'object'
             additionalProperties = $false
@@ -727,11 +938,27 @@ function Get-ToolList {
                 prompt = @{ type = 'string'; maxLength = 20000 }
                 sandbox = @{ type = 'string'; enum = @('read-only', 'workspace-write'); default = 'read-only' }
                 handshake_only = @{ type = 'boolean'; default = $true }
+                execution_mode = @{ type = 'string'; enum = @('sync', 'async'); default = 'sync' }
+            }
+        }
+    }
+    $pollTool = [ordered]@{
+        name = 'sol_luna_poll'
+        description = 'Poll a task-bound asynchronous Sol Luna job until it returns the worker result. The nested result carries the app-server launch record and HOST_VERIFIED/BLOCKED identity state.'
+        inputSchema = [ordered]@{
+            type = 'object'
+            additionalProperties = $false
+            required = @('task_id', 'job_id')
+            properties = [ordered]@{
+                task_id = @{ type = 'string'; pattern = '^[A-Za-z0-9._-]{1,128}$' }
+                job_id = @{ type = 'string'; pattern = '^[a-f0-9]{32}$' }
+                wait_seconds = @{ type = 'integer'; minimum = 0; maximum = 30; default = 0 }
             }
         }
     }
     $list = [System.Collections.ArrayList]::new()
     [void]$list.Add($tool)
+    [void]$list.Add($pollTool)
     return ,$list
 }
 
@@ -740,8 +967,49 @@ function Get-InitializeResult {
         protocolVersion = '2024-11-05'
         capabilities = @{ tools = @{ listChanged = $false } }
         serverInfo = @{ name = $script:BrokerName; version = $script:BrokerVersion }
-        instructions = 'sol_luna_exec always launches fresh gpt-5.6-luna/max. The default app-server transport records host model/effort at thread/start and rejects model/rerouted events. Run handshake_only=true first. Worker self-report is advisory; the legacy CLI transport remains STARTED_UNVERIFIED.'
+        instructions = 'sol_luna_exec always launches fresh gpt-5.6-luna/max. Run handshake_only=true synchronously first. For implementation packets that may exceed an MCP caller deadline, set execution_mode=async and poll the returned job_id with sol_luna_poll. The nested result records host model/effort at thread/start and rejects model/rerouted events. Worker self-report is advisory; the legacy CLI transport remains STARTED_UNVERIFIED.'
     }
+}
+
+if ($Worker) {
+    $jobPath = $env:SOL_LUNA_WORKER_JOB_FILE
+    try {
+        if (-not $jobPath) { throw 'SOL_LUNA_WORKER_JOB_FILE is required in worker mode' }
+        $requestText = [Console]::In.ReadToEnd()
+        $workerArguments = $requestText | ConvertFrom-Json
+        $result = Invoke-LunaTool -Arguments $workerArguments
+        $previous = Read-JobState -Path $jobPath
+        $state = [ordered]@{
+            schema = 1
+            status = 'COMPLETED'
+            task_id = Get-TextProperty $workerArguments 'task_id'
+            job_id = if ($previous) { [string]$previous.job_id } else { $null }
+            receipt_id = if ($previous) { [string]$previous.receipt_id } else { $null }
+            receipt_kind = 'HOST_JOB_RECEIPT'
+            submitted_at = if ($previous) { [string]$previous.submitted_at } else { $null }
+            updated_at = [DateTime]::UtcNow.ToString('o')
+            pid = $PID
+            result = $result
+            error = $null
+        }
+    } catch {
+        $previous = if ($jobPath) { Read-JobState -Path $jobPath } else { $null }
+        $state = [ordered]@{
+            schema = 1
+            status = 'FAILED'
+            task_id = if ($previous) { [string]$previous.task_id } else { $null }
+            job_id = if ($previous) { [string]$previous.job_id } else { $null }
+            receipt_id = if ($previous) { [string]$previous.receipt_id } else { $null }
+            receipt_kind = 'HOST_JOB_RECEIPT'
+            submitted_at = if ($previous) { [string]$previous.submitted_at } else { $null }
+            updated_at = [DateTime]::UtcNow.ToString('o')
+            pid = $PID
+            result = $null
+            error = Protect-OutputText $_.Exception.Message
+        }
+    }
+    if ($jobPath) { Write-JobStateAtomic -Path $jobPath -State $state }
+    exit 0
 }
 
 while ($null -ne ($line = [Console]::In.ReadLine())) {
@@ -772,10 +1040,15 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                     if (-not $paramsProperty) { throw 'params is required' }
                     $params = $paramsProperty.Value
                     $name = Get-TextProperty $params 'name'
-                    if ($name -ne 'sol_luna_exec') { throw "Unknown tool: $name" }
                     $argumentsProperty = $params.PSObject.Properties['arguments']
                     if (-not $argumentsProperty) { throw 'arguments is required' }
-                    Send-Result -Id $id -Result (Invoke-LunaTool $argumentsProperty.Value)
+                    if ($name -eq 'sol_luna_exec') {
+                        Send-Result -Id $id -Result (Invoke-LunaTool $argumentsProperty.Value)
+                    } elseif ($name -eq 'sol_luna_poll') {
+                        Send-Result -Id $id -Result (Invoke-PollTool $argumentsProperty.Value)
+                    } else {
+                        throw "Unknown tool: $name"
+                    }
                 } catch {
                     Send-Result -Id $id -Result $_.Exception.Message -IsError
                 }

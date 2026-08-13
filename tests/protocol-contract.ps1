@@ -66,6 +66,8 @@ Assert-Contains $protocol 'HOST_ENABLEMENT_REQUIRED' 'missing Luna must be a hos
 Assert-Contains $protocol 'Registration action:' 'plan must tell the caller what registration action is next'
 Assert-Contains $protocol 'Dispatch tool/schema:' 'plan and handshake must bind the selected tool schema'
 Assert-Contains $protocol 'THREAD_SURFACE_NOT_VISIBLE' 'protocol must distinguish thread surface visibility'
+Assert-Contains $protocol 'HOST_JOB_RECEIPT' 'protocol must define asynchronous broker submission evidence'
+Assert-Contains $protocol 'sol_luna_poll' 'protocol must define asynchronous broker result retrieval'
 
 Assert-Contains $adapters 'multi_agent_v1__spawn_agent' 'native adapter must name the generic worker surface'
 Assert-Contains $adapters 'fork_context: false' 'native adapter must exclude controller history'
@@ -80,6 +82,8 @@ Assert-Contains $adapters 'BROKER_RUN_RECEIPT' 'broker receipt must remain disti
 Assert-Contains $adapters 'STARTED_UNVERIFIED' 'broker self-report must remain unverified'
 Assert-Contains $adapters 'ROLE_MAPPING_AND_LAUNCH_RECORD' 'app-server launch record must be a distinct identity proof kind'
 Assert-Contains $adapters 'model/rerouted' 'app-server reroutes must invalidate launch identity'
+Assert-Contains $adapters 'HOST_JOB_RECEIPT' 'managed broker must define asynchronous submission evidence'
+Assert-Contains $adapters 'sol_luna_poll' 'managed broker must define asynchronous result retrieval'
 Assert-Contains $protocol 'HOST_LAUNCH_RECORDED' 'protocol must distinguish host launch from effective verification'
 
 Assert-Contains $enablement 'LUNA_MAX_REQUIRED' 'enablement packet must identify the required capability'
@@ -91,6 +95,8 @@ Assert-Contains $enablement 'config.toml' 'config boundary must be documented'
 Assert-Contains $enablement 'top-level Codex session' 'config.toml must be scoped to the top-level session'
 Assert-Contains $enablement 'does not add a model' 'config.toml must not be treated as a worker allowlist'
 Assert-Contains $enablement 'collaboration.spawn_agent' 'host-owned surface must be named explicitly'
+Assert-Contains $enablement 'execution_mode="async"' 'enablement guide must define asynchronous implementation submission'
+Assert-Contains $enablement 'sol_luna_poll' 'enablement guide must define asynchronous result retrieval'
 Assert-Contains $protocol 'configuration boundary' 'protocol must explain config versus host ownership'
 Assert-Contains $protocol 'registration guide' 'protocol must link the registration procedure'
 
@@ -115,6 +121,9 @@ Assert-Contains $registration 'THREAD_SURFACE_NOT_VISIBLE' 'registration guide m
 Assert-Contains $registration 'user-visible app task' 'registration guide must separate app tasks from native workers'
 Assert-Contains $registration 'sol_luna_broker' 'registration guide must expose the operational broker'
 Assert-Contains $registration 'broker-contract.ps1' 'registration guide must expose broker verification'
+Assert-Contains $registration 'HOST_JOB_RECEIPT' 'registration guide must define asynchronous submission evidence'
+Assert-Contains $registration 'sol_luna_poll' 'registration guide must define result polling'
+Assert-Contains $registration 'execution_mode="async"' 'registration guide must define asynchronous execution'
 
 Assert-Contains $readme 'README.en.md' 'README must expose the English companion'
 Assert-Contains $readme 'sol-advisor' 'README must record the Sol advisor reference project'

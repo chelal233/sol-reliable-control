@@ -189,6 +189,25 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File `
 This route is an operational Luna path, not a new user-owned Codex task and not
 permission to silently replace the native surface's identity evidence.
 
+For a bounded implementation packet that may exceed the caller's MCP deadline,
+keep the identity handshake synchronous, then set `execution_mode="async"` on
+the implementation call. The broker returns a task-bound `HOST_JOB_RECEIPT`
+and `job_id` immediately; poll it with the second tool:
+
+```text
+sol_luna_poll({
+  task_id: <same stable id>,
+  job_id: <returned 32-character id>,
+  wait_seconds: 0..30
+})
+```
+
+The poll result is `PENDING`, `COMPLETED`, or `FAILED`. On `COMPLETED`, inspect
+the nested `result.structuredContent` and require its app-server
+`HOST_LAUNCH_RECORD`/`HOST_VERIFIED` evidence before accepting the worker
+result. A submission deadline or a `PENDING` poll is not a worker failure;
+do not resubmit the same packet.
+
 ## Step 3: optional CLI custom-role registration
 
 Use this path only when the host explicitly supports and reports a

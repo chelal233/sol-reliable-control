@@ -36,6 +36,9 @@ Assert-Contains $scriptText 'selfModel -and $selfModel.ToLowerInvariant()' 'brok
 Assert-Contains $scriptText 'Protect-OutputText' 'broker must sanitize output before it crosses MCP'
 Assert-Contains $scriptText 'redaction = [ordered]@{' 'broker must expose redaction status'
 Assert-Contains $scriptText 'SOL_LUNA_ALLOWED_ROOTS must be configured' 'broker must require explicit filesystem roots'
+Assert-Contains $scriptText 'HOST_JOB_RECEIPT' 'broker must expose a task-bound asynchronous receipt'
+Assert-Contains $scriptText 'sol_luna_poll' 'broker must expose asynchronous result retrieval'
+Assert-Contains $scriptText 'execution_mode' 'broker must expose synchronous/asynchronous execution modes'
 
 $requests = @(
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}',
@@ -54,11 +57,17 @@ Assert-Contains $initialize.result.instructions 'gpt-5.6-luna/max' 'initialize m
 
 $list = $records | Where-Object { $_.id -eq 2 }
 Assert-True ($list.result.tools -is [array]) 'tools/list must return a JSON array'
-Assert-True ($list.result.tools.Count -eq 1) 'tools/list must expose exactly one broker tool'
-Assert-True ($list.result.tools[0].name -eq 'sol_luna_exec') 'broker tool name must be stable'
-Assert-True ($list.result.tools[0].inputSchema.required -contains 'task_id') 'task_id must be required'
-Assert-True ($list.result.tools[0].inputSchema.required -contains 'workdir') 'workdir must be required'
-Assert-True ($list.result.tools[0].inputSchema.required -contains 'prompt') 'prompt must be required'
+Assert-True ($list.result.tools.Count -eq 2) 'tools/list must expose execution and polling broker tools'
+$execTool = $list.result.tools | Where-Object { $_.name -eq 'sol_luna_exec' }
+Assert-True ($null -ne $execTool) 'broker execution tool name must be stable'
+Assert-True ($execTool.inputSchema.required -contains 'task_id') 'task_id must be required'
+Assert-True ($execTool.inputSchema.required -contains 'workdir') 'workdir must be required'
+Assert-True ($execTool.inputSchema.required -contains 'prompt') 'prompt must be required'
+Assert-True ($execTool.inputSchema.properties.execution_mode.enum -contains 'async') 'execution tool must advertise async mode'
+$pollTool = $list.result.tools | Where-Object { $_.name -eq 'sol_luna_poll' }
+Assert-True ($null -ne $pollTool) 'broker polling tool name must be stable'
+Assert-True ($pollTool.inputSchema.required -contains 'task_id') 'poll task_id must be required'
+Assert-True ($pollTool.inputSchema.required -contains 'job_id') 'poll job_id must be required'
 
 $ping = $records | Where-Object { $_.id -eq 3 }
 Assert-True ($null -ne $ping.result) 'ping must return a result'

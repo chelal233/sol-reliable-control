@@ -29,7 +29,7 @@ Capability evidence: <host metadata or receipt reference>
 Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
-Dispatch receipt kind: HOST_RECEIPT | AGENT_HANDLE | UNKNOWN
+Dispatch receipt kind: HOST_RECEIPT | HOST_JOB_RECEIPT | AGENT_HANDLE | UNKNOWN
 Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | SELF_REPORT_ONLY | UNKNOWN
 ```
 
@@ -205,6 +205,17 @@ absence of a `model/rerouted` event for that turn. A launch record that says
 Luna/max but is followed by a host reroute or another host-effective identity
 fact is `HOST_MODEL_MISMATCH`, not verified. A worker's generic self-report is
 advisory and does not override the host launch record.
+
+Long-running implementation packets use the broker's asynchronous variant:
+`sol_luna_exec(execution_mode=async)` returns a task-bound `HOST_JOB_RECEIPT`
+and `job_id` without holding the MCP call open. `sol_luna_poll` retrieves the
+completed nested worker payload. The job receipt proves submission and fresh
+context only; the nested app-server launch record still must satisfy the normal
+`HOST_VERIFIED` gate. A caller deadline therefore does not discard an already
+submitted task or authorize a duplicate submission.
+
+`HOST_JOB_RECEIPT` is a submission/lookup receipt only; it is not a substitute
+for `HOST_RECEIPT` or for the nested worker's host identity evidence.
 
 The broker applies output-only privacy redaction before returning MCP content:
 Windows and Unix user-home path segments, `DESKTOP-*` host names (and the

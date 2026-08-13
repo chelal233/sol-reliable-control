@@ -49,6 +49,16 @@ roots. Restart Codex, then call `sol_luna_exec` first with
 `handshake_only=true` and `sandbox="read-only"`. MCP output redacts user-home
 paths, `DESKTOP-*` host names, and credential-shaped values.
 
+For implementation packets that may exceed the caller's MCP deadline, keep the
+identity handshake synchronous, then submit the packet with
+`execution_mode="async"`. Submission immediately returns a task-bound
+`HOST_JOB_RECEIPT` and `job_id` while a fresh Luna/max worker continues in the
+background. Poll with `sol_luna_poll(task_id, job_id, wait_seconds)`. Only the
+nested worker payload is the final result; evaluate its `HOST_LAUNCH_RECORD`,
+`HOST_VERIFIED`, or `BLOCKED` state using the normal identity gate. A single
+`tools/call` timeout is not proof that the worker failed, and the same packet
+must not be submitted again.
+
 ## Reference projects and official documentation
 
 This project is conceptually informed by these public projects, but does not
@@ -72,4 +82,6 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests/privacy-contract.ps1
 ```
 
 See [SKILL.md](SKILL.md) and the files under `references/` for the complete
-protocol and registration rules.
+protocol and registration rules. The broker implementation is
+[`scripts/sol-luna-broker.ps1`](scripts/sol-luna-broker.ps1); its `sol_luna_exec`
+and `sol_luna_poll` tools share task-bound receipts and the same redaction gate.

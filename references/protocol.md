@@ -104,7 +104,7 @@ Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
 Transport: PASS | FAIL
 Dispatch receipt: <host receipt id/path or UNKNOWN>
-Dispatch receipt kind: HOST_RECEIPT | AGENT_HANDLE | UNKNOWN
+Dispatch receipt kind: HOST_RECEIPT | HOST_JOB_RECEIPT | AGENT_HANDLE | UNKNOWN
 Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | SELF_REPORT_ONLY | UNKNOWN
 Identity: VERIFIED | UNVERIFIED | FAIL
 Self-report warning: NONE | MISMATCH | UNKNOWN
@@ -222,7 +222,8 @@ sol_luna_exec({
   workdir: <approved worktree>,
   prompt: <compact packet>,
   sandbox: "read-only" | "workspace-write",
-  handshake_only: true | false
+  handshake_only: true | false,
+  execution_mode: "sync" | "async"
 })
 ```
 
@@ -247,6 +248,27 @@ This creates three separate retest states: `TRANSPORT_VERIFIED` means the
 broker answered; `HOST_LAUNCH_RECORDED` means the host assigned Luna/max at
 thread start; `HOST_VERIFIED` means the effective turn remained Luna/max with
 no host mismatch. A launch record alone is not the final retest result.
+
+The identity handshake remains synchronous. For an implementation packet that
+may exceed the caller's MCP deadline, submit with `execution_mode="async"`
+after the handshake has passed. The broker immediately returns a task-bound
+`HOST_JOB_RECEIPT` and `job_id`; retrieve the nested worker result with:
+
+```text
+sol_luna_poll({
+  task_id: <same stable id>,
+  job_id: <returned job id>,
+  wait_seconds: 0..30
+})
+```
+
+`PENDING` means the task is still running, not that it failed. Only the nested
+result's app-server launch record and identity state authorize acceptance. Do
+not resubmit an identical packet after a caller deadline.
+
+`HOST_JOB_RECEIPT` proves that the broker accepted and retained the task
+packet; it is not a `HOST_RECEIPT` and cannot satisfy a high-risk identity gate
+without the nested result.
 
 ## Lane selection
 

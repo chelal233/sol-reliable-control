@@ -165,6 +165,13 @@ native subagent. The broker must:
 - label model self-report as advisory. The app-server launch record can satisfy
   `HOST_VERIFIED` only when it matches and no host reroute is observed.
 
+For implementation packets that may exceed the MCP caller deadline, the broker
+supports an explicit asynchronous `HOST_JOB_RECEIPT` plus `sol_luna_poll`.
+Submit only after the synchronous identity handshake passes; poll the same
+task-bound job until its nested worker payload is `COMPLETED` or `FAILED`. A
+caller timeout or `PENDING` result is not permission to resubmit the packet and
+is not evidence that the worker failed.
+
 Broker output is sanitized before it crosses the MCP boundary: user-home
 paths, host names, and credential-shaped values are redacted. This is an
 output privacy guard, not a substitute for the explicit allowed-root,

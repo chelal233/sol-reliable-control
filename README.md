@@ -29,7 +29,7 @@
 - `references/enablement.md`：LUNA_MAX 必须由宿主启用的请求、响应、验收门禁，以及 `config.toml` 与 host surface 的边界。
 - `references/registration.md`：调用者被卡在 Luna/max 前置检查时的注册、刷新、精确调用和恢复步骤。
 - `references/registration.md` 同时区分 native worker、CLI custom-role 和显式 user-visible app task；后者不是 native sub-agent，也不能绕过 `No user-owned task` 约束。
-- `scripts/sol-luna-broker.ps1`：固定 Luna/max 的本地 STDIO MCP broker，含 fresh/范围/sandbox/receipt 门禁。
+- `scripts/sol-luna-broker.ps1`：固定 Luna/max 的本地 STDIO MCP broker，含 fresh/范围/sandbox/receipt 门禁，以及长任务异步提交/轮询。
 - `tests/protocol-contract.ps1`：不依赖宿主的协议契约回归检查。
 - `tests/broker-contract.ps1`：MCP initialize、tools/list、ping 和固定 lane 的 broker 契约检查。
 - `tests/privacy-contract.ps1`：源码路径、凭据形态和 broker 输出脱敏契约检查。
@@ -70,3 +70,9 @@ SOL_LUNA_ALLOWED_ROOTS = "<approved-worktree-root>;<sol-reliable-control-worktre
 
 保存前将尖括号占位符替换为本机实际路径；broker 不再内置任何默认文件系统根目录。
 重启 Codex 后，先调用 `sol_luna_exec` 并保持 `handshake_only=true`；只有收到结构化结果后，Sol 才能决定是否继续。broker 会对 MCP 输出中的用户目录、主机名和凭据形态值做脱敏。完整注册和证据规则见 [references/registration.md](references/registration.md)。
+
+对于可能超过调用方 MCP deadline 的实现任务，握手通过后将实现包提交为
+`execution_mode="async"`；提交会立即返回 `HOST_JOB_RECEIPT` 和 `job_id`，后台继续运行 fresh Luna/max。
+随后使用 `sol_luna_poll(task_id, job_id, wait_seconds)` 轮询。只有轮询结果中的嵌套
+worker payload 才是最终结果；其中的 `HOST_LAUNCH_RECORD`、`HOST_VERIFIED` 或
+`BLOCKED` 仍按原身份门禁处理。不要把一次 `tools/call` 超时当作 worker 失败，也不要重复提交相同 packet。
