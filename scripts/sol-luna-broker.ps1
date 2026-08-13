@@ -258,7 +258,11 @@ function Get-ThreadId {
 }
 
 function Get-ShortStderr {
-    param([Parameter(Mandatory = $true)] [string] $Stderr)
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string] $Stderr
+    )
 
     $lines = @($Stderr -split "`r?`n" | Where-Object { $_ -and $_.Length -lt 500 })
     if ($lines.Count -gt 12) { $lines = @($lines | Select-Object -First 12) }
