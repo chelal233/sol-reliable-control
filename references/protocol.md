@@ -13,6 +13,7 @@ Route: DIRECT | SOL_ONLY | LUNA_MAX | SOL_XHIGH | FALLBACK
 Execution context: FRESH | CURRENT
 Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
 Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED
+Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
 Registration action: NONE | REQUEST_HOST_ENABLEMENT | REGISTER_CUSTOM_ROLE | REFRESH_PREFLIGHT
 Capability preflight: REQUIRED
@@ -35,6 +36,28 @@ Sol must select an adapter only after capability preflight. The route binding
 is fixed: `LUNA_MAX` requests `gpt-5.6-luna / max`, and `SOL_XHIGH` requests
 `gpt-5.6-sol / xhigh`. A surface may reject that request; it may not silently
 rewrite it.
+
+Capability snapshots are thread- and host-bound. Enumerate worker tools from
+the same controller thread that will dispatch the packet. The preferred native
+surface is `multi_agent_v1__spawn_agent` when visible:
+
+```text
+multi_agent_v1__spawn_agent({
+  fork_context: false,
+  model: "gpt-5.6-luna",
+  reasoning_effort: "max",
+  message: <identity-only handshake or bounded packet>
+})
+```
+
+`collaboration.spawn_agent` is a distinct schema. If it declares
+`task_name`, `fork_turns`, `model`, `reasoning_effort`, and `message` but its
+model list omits Luna, classify that candidate as unavailable and continue
+surface discovery; do not conclude that Luna is unavailable on the host if
+`multi_agent_v1__spawn_agent` is visible under another thread binding. If no
+eligible surface is visible in the current thread, return
+`THREAD_SURFACE_NOT_VISIBLE` with `HOST_REGISTRATION_REQUIRED` and request a
+surface migration/rebind or a fresh controller thread.
 
 `Luna enablement: REQUIRED` is the default deployment requirement. It means
 the host must expose the normal Luna capability even when a particular packet
@@ -66,6 +89,7 @@ Ask the lane to return only:
 Task ID: <same id>
 Route: <requested route>
 Surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | UNKNOWN
+Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
 Luna enablement: VERIFIED | NOT_ENABLED | UNKNOWN
@@ -102,8 +126,9 @@ contract for callers that cannot start `LUNA_MAX`.
 ## Mandatory Luna enablement gate
 
 Before a normal dispatch, a plan with `Luna enablement: REQUIRED` must receive
-`Luna enablement: VERIFIED` for `gpt-5.6-luna / max`. If the host advertises no
-Luna pair, set `Luna enablement: NOT_ENABLED`, return
+`Luna enablement: VERIFIED` for `gpt-5.6-luna / max`. If no eligible candidate
+surface in the current thread advertises the Luna pair, set
+`Luna enablement: NOT_ENABLED`, return
 `HOST_ENABLEMENT_REQUIRED` with failure class `runtime` / `model_identity`,
 and do not create a worker. The host must provide new capability evidence
 before preflight is repeated.
@@ -116,7 +141,8 @@ new user-owned task must not be created as an enablement workaround.
 ## Configuration boundary
 
 `config.toml` controls the top-level Codex session's model/effort selection; it
-does not extend the host-owned `collaboration.spawn_agent` model allowlist or
+does not extend the host-owned `multi_agent_v1__spawn_agent` or
+`collaboration.spawn_agent` model allowlist or
 produce worker receipt/identity evidence. Changing the Sol controller to Luna
 would change the controller identity, not enable the child lane. The enablement
 request must therefore be handled by the host capability registry or a host
@@ -135,8 +161,8 @@ controller history: excluded
 prompt: the compact plan packet plus the result-packet rules
 ```
 
-For the current `multi_agent_v1__spawn_agent` schema, the concrete normalized
-call is:
+When the current thread exposes `multi_agent_v1__spawn_agent`, the concrete
+native call is:
 
 ```text
 multi_agent_v1__spawn_agent({
@@ -150,6 +176,11 @@ multi_agent_v1__spawn_agent({
 The adapter must use the selected surface's declared field names. A surface
 that uses `fork_turns: none` may express the same fresh-context contract, but
 that field must not be sent to a schema that only accepts `fork_context`.
+
+Do not send the `multi_agent_v1__spawn_agent` fields to
+`collaboration.spawn_agent`, or send `task_name`/`fork_turns` to the former.
+These are different host schemas. A thread that exposes only the latter must
+not retry with a Luna model that its own enum rejects.
 
 `LUNA_MAX` and `SOL_XHIGH` are logical lane labels, not required custom
 registrations. `SOL_XHIGH` requests `gpt-5.6-sol / xhigh`. If the host rejects

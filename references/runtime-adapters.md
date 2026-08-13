@@ -28,6 +28,7 @@ Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
 Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
+Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Dispatch receipt kind: HOST_RECEIPT | AGENT_HANDLE | UNKNOWN
 Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | SELF_REPORT_ONLY | UNKNOWN
 ```
@@ -51,11 +52,33 @@ These are the only normal Sol lanes. `SOL_XHIGH` is a normal replan when task
 fit or the escalation gate selects it; it is not an implicit compatibility
 fallback.
 
+## Surface discovery and thread binding
+
+Capability is scoped to the controller thread and host that will perform the
+dispatch. A capability list captured in another thread, a UI picker, a role
+file, or a worker's self-report cannot authorize this dispatch. Enumerate the
+current callable surfaces in this order:
+
+1. `multi_agent_v1__spawn_agent` with a model/effort matrix that contains
+   `gpt-5.6-luna / max`.
+2. A `CUSTOM_ROLE` or `HOST_MANAGED` surface with an authoritative role/launch
+   record for `luna-max-worker`.
+3. `collaboration.spawn_agent` only when its declared schema and model matrix
+   contain the required Luna pair.
+
+If a thread exposes only `collaboration.spawn_agent` with
+`gpt-5.6-sol`/`gpt-5.6-terra`, that candidate is unavailable, but the result
+must not be promoted to a global host verdict until all visible candidates have
+been checked. If `multi_agent_v1__spawn_agent` is visible on a sibling thread
+but not this controller, use `THREAD_SURFACE_NOT_VISIBLE` and request a host
+surface migration/rebind or a fresh controller thread. Never transplant a
+sibling's `agent_id`, receipt, or self-report.
+
 ## Adapter: NATIVE_GENERIC
 
-Use this adapter when the host exposes a generic worker surface with model and
-effort overrides. For the current `multi_agent_v1__spawn_agent` schema, the
-normalized request maps as follows:
+Use this adapter when the current host exposes a generic worker surface with
+model and effort overrides. The preferred native schema is
+`multi_agent_v1__spawn_agent`:
 
 ```text
 multi_agent_v1__spawn_agent({
@@ -71,6 +94,21 @@ controller history excluded. If another host surface uses `fork_turns: none`,
 the adapter may map the same normalized meaning to that field; do not send a
 field that the selected surface does not declare.
 
+The alternate `collaboration.spawn_agent` schema must be inspected separately:
+
+```text
+collaboration.spawn_agent({
+  task_name: <stable task id or host task name>,
+  fork_turns: "none",
+  model: "gpt-5.6-luna",
+  reasoning_effort: "max",
+  message: <compact task packet>
+})
+```
+
+Use this form only when the current schema declares these fields and advertises
+the exact Luna/max pair. The two schemas are not interchangeable.
+
 Preflight must confirm that the host's advertised model/effort matrix contains
 the required pair. A host rejection such as `Unknown model` is an explicit
 `UNAVAILABLE` result, not a reason to retry the same packet or substitute a
@@ -82,6 +120,10 @@ task-bound host receipt and not identity proof. It becomes a usable
 task-bound dispatch receipt and exposes the requested/observed model and
 effort. For `HOST_VERIFIED`, identity proof must be
 `HOST_OBSERVED_MODEL_EFFORT`; a worker self-report is advisory only.
+
+A successful native probe on one controller thread is evidence for that
+thread's callable surface only. It is not a receipt or identity proof for a
+different target thread.
 
 ## Adapter: CUSTOM_ROLE
 

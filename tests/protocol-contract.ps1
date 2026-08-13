@@ -48,6 +48,8 @@ Assert-Contains $skill 'HOST_VERIFIED' 'verified identity gate must remain expli
 Assert-Contains $skill 'BLOCKED' 'unproven execution must fail closed'
 Assert-Contains $skill '`LUNA_MAX` capability is mandatory' 'Luna must be a required host capability'
 Assert-Contains $skill 'HOST_ENABLEMENT_REQUIRED' 'missing Luna capability must request host enablement'
+Assert-Contains $skill 'multi_agent_v1__spawn_agent' 'canonical native Luna surface must be documented'
+Assert-Contains $skill 'THREAD_SURFACE_NOT_VISIBLE' 'thread-bound surface gaps must be classified'
 
 Assert-Contains $protocol 'Surface:' 'plan packet must identify the execution surface'
 Assert-Contains $protocol 'Capability verdict:' 'handshake must carry capability evidence'
@@ -61,6 +63,8 @@ Assert-Contains $protocol 'Luna enablement: REQUIRED' 'plan must require Luna en
 Assert-Contains $protocol 'Enablement evidence:' 'handshake must carry Luna enablement evidence'
 Assert-Contains $protocol 'HOST_ENABLEMENT_REQUIRED' 'missing Luna must be a host enablement blocker'
 Assert-Contains $protocol 'Registration action:' 'plan must tell the caller what registration action is next'
+Assert-Contains $protocol 'Dispatch tool/schema:' 'plan and handshake must bind the selected tool schema'
+Assert-Contains $protocol 'THREAD_SURFACE_NOT_VISIBLE' 'protocol must distinguish thread surface visibility'
 
 Assert-Contains $adapters 'multi_agent_v1__spawn_agent' 'native adapter must name the generic worker surface'
 Assert-Contains $adapters 'fork_context: false' 'native adapter must exclude controller history'
@@ -99,6 +103,8 @@ Assert-Contains $registration 'HOST_VERIFIED' 'registration guide must retain th
 Assert-Contains $registration 'multi_agent_v1__spawn_agent' 'registration guide must cover the alternate native wrapper'
 Assert-Contains $registration 'fork_context: false' 'registration guide must cover the alternate fresh-context field'
 Assert-Contains $registration 'AGENT_HANDLE' 'registration guide must classify returned agent ids'
+Assert-Contains $registration 'THREAD_SURFACE_NOT_VISIBLE' 'registration guide must handle per-thread surface gaps'
+Assert-Contains $registration 'user-visible app task' 'registration guide must separate app tasks from native workers'
 
 Assert-NotContains $skill 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
 Assert-NotContains $protocol 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'

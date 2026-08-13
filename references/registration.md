@@ -24,24 +24,48 @@ and [GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/lates
 
 ## Step 1: classify the current surface
 
-Read the capability metadata from the same host and task surface that will
+Read the capability metadata from the same host and controller thread that will
 launch the worker. Do not reuse a model list from another thread, CLI session,
-or parent host.
+or parent host. Enumerate all callable worker tools before classifying the host
+as globally unavailable.
 
 ```text
 Surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | UNKNOWN
 Schema fields: <exact host-declared fields>
 Advertised models: <exact host list>
 Advertised efforts: <exact host list or per-model matrix>
+Candidate tools: <all visible worker tool names>
 ```
 
-If the metadata contains `gpt-5.6-luna` with `max`, continue to Step 4. If the
-pair is absent, continue to Step 2. If the surface is unknown, return
-`HOST_REGISTRATION_REQUIRED` rather than guessing a registration mechanism.
+If `multi_agent_v1__spawn_agent` is visible and contains `gpt-5.6-luna / max`,
+use the native call in Step 2A. If only a custom/managed role is visible, use
+Step 3. If only `collaboration.spawn_agent` is visible and its pair is absent,
+continue to Step 2B. If a sibling thread can see the native Luna surface but
+this thread cannot, return `THREAD_SURFACE_NOT_VISIBLE` and request a fresh
+controller thread or host surface migration/rebind; do not call the sibling's
+agent id from this thread.
 
-## Step 2: register the Native generic surface
+## Step 2A: use the canonical native wrapper
 
-For the current `collaboration.spawn_agent` family, the host owner must add
+When the current thread exposes the following tool, no model registration is
+needed in `config.toml`:
+
+```text
+multi_agent_v1__spawn_agent({
+  fork_context: false,
+  model: "gpt-5.6-luna",
+  reasoning_effort: "max",
+  message: <identity-only handshake or bounded packet>
+})
+```
+
+Run the identity-only handshake first. The returned `agent_id` is an
+`AGENT_HANDLE` unless the host explicitly labels it a task-bound receipt. Keep
+the high-risk gate closed until host-owned model/effort evidence is returned.
+
+## Step 2B: register the alternate generic surface
+
+For the `collaboration.spawn_agent` family, the host owner must add
 the exact model/effort pair to the host-owned capability registry:
 
 ```text
@@ -100,6 +124,10 @@ task, surface, requested model/effort, fresh-context setting, controller
 history exclusion, and host-observed model/effort. An advertised allowlist or
 returned `agent_id` alone is not enough.
 
+Do not infer from this alternate schema that the host has no Luna capability
+when `multi_agent_v1__spawn_agent` is visible on the same Desktop host. Schema
+visibility is thread-bound and must be recorded in the capability snapshot.
+
 ## Step 3: optional CLI custom-role registration
 
 Use this path only when the host explicitly supports and reports a
@@ -151,15 +179,23 @@ capability snapshot. The exact reload action is host-specific; use the
 following sequence:
 
 1. Restart or reload the process that owns the worker tool registry.
-2. Start a new capability-preflight turn if the current thread cached the old
-   model list.
-3. Read the same surface metadata again and record the new model/effort list.
-4. Do not dispatch until `gpt-5.6-luna / max` is present.
-5. Send the identity-only handshake and require the receipt/identity evidence
+2. Re-enumerate all worker tools in the current controller thread; a full
+   Desktop restart alone does not prove that the existing thread was rebound.
+3. If the canonical wrapper is still absent, start a fresh controller thread
+   on the host that exposes it or request explicit surface migration/rebind.
+4. Read the selected surface metadata again and record the model/effort list.
+5. Do not dispatch until `gpt-5.6-luna / max` is present on that surface.
+6. Send the identity-only handshake and require the receipt/identity evidence
    before sending implementation instructions.
 
 A successful top-level Luna session does not replace this refresh. Likewise,
 the presence of a TOML role file does not replace host evidence.
+
+Some clients expose Luna through an explicit user-visible app task instead of a
+native worker surface. That route is separate, creates a user-owned task, and
+is allowed only when the current plan explicitly permits it. It is not a way
+to satisfy a `No user-owned task: true` packet or a substitute for native
+subagent evidence.
 
 ## Step 5: execute the caller's bounded packet
 
@@ -174,7 +210,18 @@ Identity gate: HOST_VERIFIED
 Fallback: BLOCKED
 ```
 
-For the declared native schema:
+For the canonical native schema:
+
+```text
+multi_agent_v1__spawn_agent({
+  fork_context: false,
+  model: "gpt-5.6-luna",
+  reasoning_effort: "max",
+  message: <compact plan packet plus handshake/result rules>
+})
+```
+
+For the alternate schema, only when its own model matrix contains Luna:
 
 ```text
 collaboration.spawn_agent({

@@ -99,6 +99,16 @@ logical route to a host schema; never assume that a lane name is a registered
 agent type. `NATIVE_GENERIC`, `CUSTOM_ROLE`, and `HOST_MANAGED` are separate
 adapters with separate evidence rules.
 
+Capability discovery is bound to the current controller thread and host. Before
+returning `HOST_ENABLEMENT_REQUIRED`, enumerate all callable worker surfaces in
+that same thread. Prefer `multi_agent_v1__spawn_agent` when it is exposed; its
+native Luna call uses `fork_context=false`, `model="gpt-5.6-luna"`, and
+`reasoning_effort="max"`. `collaboration.spawn_agent` is a separate generic
+schema and may expose only Sol/Terra even when the other surface exposes Luna.
+An absent surface on one thread is `THREAD_SURFACE_NOT_VISIBLE`, not proof that
+Luna is globally unavailable. Do not copy a model list, agent id, or receipt
+from another thread.
+
 `LUNA_MAX` capability is mandatory. If its preflight returns `UNAVAILABLE` or
 `UNKNOWN`, stop at the handshake gate and return `HOST_ENABLEMENT_REQUIRED`;
 do not treat generic `BLOCKED` as a completed deployment, and do not substitute
@@ -118,6 +128,13 @@ controller history in the current generic spawn schema. A returned `agent_id`
 is only an `AGENT_HANDLE` unless the host explicitly labels it a task-bound
 receipt. It cannot prove model identity. `HOST_VERIFIED` requires host-observed
 model/effort evidence; a worker self-report is advisory.
+
+The canonical native probe is an identity-only message sent through the
+currently visible `multi_agent_v1__spawn_agent` surface. If that tool is not
+visible, inspect the exact schema of `collaboration.spawn_agent` before deciding
+that registration is missing. A successful probe proves that the selected
+surface can start a Luna worker; it does not by itself upgrade `AGENT_HANDLE`
+and self-report evidence to `HOST_VERIFIED`.
 
 For `CUSTOM_ROLE`, the host must prove the registered role and launch record
 (`agent_type`, fresh fork, model, effort, and receipt). A TOML/config file alone

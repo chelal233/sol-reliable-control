@@ -49,10 +49,15 @@ Fallback: BLOCKED
 No user-owned task: true
 ```
 
-For `NATIVE_GENERIC`, the host must add the exact Luna/max pair to the
-surface's advertised allowlist and document its declared request fields. The
-adapter maps the normalized fresh-context requirement to that schema, such as
-`fork_turns: none` when the surface explicitly declares that field. For
+For `NATIVE_GENERIC`, first check whether the current controller thread already
+exposes `multi_agent_v1__spawn_agent` with the exact Luna/max pair. If it does,
+the caller uses that surface and records its declared fields; no
+`collaboration.spawn_agent` registration is needed for that dispatch. If the
+canonical wrapper is absent, the host must add the exact Luna/max pair to the
+selected surface's advertised allowlist and document its declared request
+fields. The adapter maps the normalized fresh-context requirement to that
+schema, such as `fork_turns: none` when the surface explicitly declares that
+field. For
 `CUSTOM_ROLE` or `HOST_MANAGED`, the host must expose an authoritative role or
 launch mapping; a `.codex/agents/*.toml` file alone is not enablement.
 
@@ -91,12 +96,19 @@ preflight only after the host supplies new enablement evidence. A new
 user-owned task is not an enablement mechanism and must not be created to
 obtain Luna.
 
+If another thread on the same Desktop host exposes `multi_agent_v1__spawn_agent`
+with Luna/max while the current thread exposes only the Sol/Terra
+`collaboration.spawn_agent` schema, classify the current result as
+`THREAD_SURFACE_NOT_VISIBLE`. The recovery action is surface migration/rebind
+or a fresh controller thread, not model substitution.
+
 ## Configuration boundary
 
 `config.toml` is a top-level Codex session configuration. Its `model` and
 `model_reasoning_effort` settings can select the current controller's model and
 effort when the host permits that model. It does not add a model to the
-`collaboration.spawn_agent` host allowlist, change that tool's schema, or create
+`multi_agent_v1__spawn_agent` or `collaboration.spawn_agent` host allowlist,
+change either tool's schema, or create
 a task-bound `HOST_RECEIPT` and host-observed identity evidence.
 
 Do not change the Sol controller's `model` to `gpt-5.6-luna` as a way to enable
