@@ -16,6 +16,10 @@ This skill owns only Sol-specific control decisions:
 
 This skill is self-contained for Sol routing and review. Unrelated environment management is outside its scope and is not required for its decisions.
 
+The complete external-reference, trade-off, failure-mode, mitigation, and
+public-release catalog is [references/sources.md](references/sources.md). Use it
+when changing a route, reviewing host behavior, or preparing a GitHub release.
+
 Use it for work large enough to justify delegation. Keep a small, clear, single-step request Direct.
 
 ## Route selection

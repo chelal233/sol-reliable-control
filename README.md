@@ -42,25 +42,33 @@
 - `tests/broker-contract.ps1`：MCP initialize、tools/list、ping 和固定 lane 的 broker 契约检查。
 - `tests/privacy-contract.ps1`：源码路径、凭据形态和 broker 输出脱敏契约检查。
 - `README.en.md`：English installation, routing, verification, and reference guide。
+- `references/sources.md`：完整参考项目、官方资料、关键原则、利弊/陷阱/解决方案及 GitHub 发布门禁清单。
 - `agents/openai.yaml`：Codex skill 列表的界面元数据。
 
 ## 参考项目与官方文档
 
-本项目借鉴了以下公开项目的 Sol/Advisor 编排思路，但不运行时依赖它们，
-也不复制其中的凭据、用户数据或工作树：
+完整清单（包括两个参考项目的具体编排文件、官方 MCP/App Server/Subagents、
+Luna 模型资料、Windows sandbox 说明、上游 setup 源码和运行问题证据）见
+[references/sources.md](references/sources.md)。本项目只借鉴公开设计，不运行时依赖
+这些项目，也不复制凭据、用户数据或工作树。
+公开参考项目包括 [sol-advisor](https://github.com/DannyMac180/sol-advisor) 和
+[codex-sol-control](https://github.com/yehyakin/codex-sol-control)。
 
-- [DannyMac180/sol-advisor](https://github.com/DannyMac180/sol-advisor)：Sol advisor 的编排与审查思路参考。
-- [yehyakin/codex-sol-control](https://github.com/yehyakin/codex-sol-control)：早期 Codex Sol control 设计参考；本项目针对当前 Desktop app-server/MCP 宿主重新实现了身份门禁。
+## 主要事项与关键要点
 
-宿主协议以官方文档为准：[MCP](https://learn.chatgpt.com/docs/extend/mcp)、
-[App Server](https://learn.chatgpt.com/docs/app-server)、
-[Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)。
+1. 路由顺序固定为 Native →（明确批准时）Desktop task → MCP；未批准时不创建 user-owned task。
+2. `LUNA_MAX` 始终绑定 `gpt-5.6-luna / max`，`SOL_XHIGH` 绑定 `gpt-5.6-sol / xhigh`，不静默换模型。
+3. `TRANSPORT_VERIFIED`、`HOST_LAUNCH_RECORDED`、`HOST_VERIFIED` 分层；UI、self-report、裸 `agent_id` 不能单独证明身份。
+4. Desktop task 必须选择正确项目/工作树；projectless 只用于握手，local 目录必须显式授权。
+5. Windows sandbox ACL/进程创建失败是宿主执行故障；Sol 不调用 `setupStart`、`icacls`、`Set-Acl` 或扩大权限。
+6. MCP 超时使用同一 `job_id` 轮询，禁止重复提交实现包；身份与执行失败分离记录。
+7. 发布 GitHub 前必须检查未跟踪文件、秘密、机器路径、旧 worktree、原始日志和许可证归属，并在源/运行时两端运行三组契约测试。
 
 ## 安装
 
 将仓库目录复制到 `$CODEX_HOME/skills/sol-reliable-control`，或使用 Codex skill 安装器从本仓库安装。
 
-运行时仍由宿主提供 native worker dispatch、模型身份和 `HOST_RECEIPT`；当 native surface 不可见时，可注册本包的 MCP broker 作为固定 Luna/max 的操作主链路。默认 app-server 路线返回宿主 launch record；CLI 诊断路线的 receipt 和 self-report 仍按 `STARTED_UNVERIFIED` 处理，不能把“分配到 Luna”与“turn 有效身份已验证”混为一谈。
+运行时仍由宿主提供 native worker dispatch、模型身份和 `HOST_RECEIPT`；默认按 Native → Desktop task → MCP 选择 Luna/max 路线。默认 app-server 路线返回宿主 launch record；CLI 诊断路线的 receipt 和 self-report 仍按 `STARTED_UNVERIFIED` 处理，不能把“分配到 Luna”与“turn 有效身份已验证”混为一谈。
 
 ## MCP broker 注册
 

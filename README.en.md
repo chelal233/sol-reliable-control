@@ -107,17 +107,25 @@ must not be submitted again.
 
 ## Reference projects and official documentation
 
-This project is conceptually informed by these public projects, but does not
-depend on them at runtime and does not copy credentials, user data, or old
-worktrees:
+The complete list of public projects, official host/model/sandbox sources,
+operational evidence, local implementation files, trade-offs, pitfalls,
+mitigations, and GitHub publication gates is in
+[references/sources.md](references/sources.md). The repository links and
+paraphrases these sources; it does not depend on them at runtime or copy
+credentials, user data, or old worktrees.
+The public reference projects are
+[sol-advisor](https://github.com/DannyMac180/sol-advisor) and
+[codex-sol-control](https://github.com/yehyakin/codex-sol-control).
 
-- [DannyMac180/sol-advisor](https://github.com/DannyMac180/sol-advisor) — Sol advisor orchestration and review ideas.
-- [yehyakin/codex-sol-control](https://github.com/yehyakin/codex-sol-control) — early Codex Sol control design reference; this repository reimplements the host adapter for the current Desktop app-server/MCP surface.
+Key controls are:
 
-Host behavior is governed by the official [MCP](https://learn.chatgpt.com/docs/extend/mcp),
-[App Server](https://learn.chatgpt.com/docs/app-server), and
-[Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
-documentation.
+1. Native -> (explicitly approved) Desktop task -> MCP; no implicit user-task creation.
+2. Exact lane binding: `gpt-5.6-luna / max` and `gpt-5.6-sol / xhigh`; no silent model substitution.
+3. Independent transport, launch-identity, execution, freshness, and history gates.
+4. Project selection before Desktop tasks; projectless is handshake-only.
+5. No Sol-owned ACL/token repair or broad permission changes after sandbox failures.
+6. Same-job polling after MCP timeouts; no duplicate implementation packet.
+7. Source/runtime hash equality and privacy/protocol/broker tests before publication.
 
 ## Verification
 
@@ -133,3 +141,7 @@ protocol and registration rules, including
 explicit Desktop Luna task route. The broker implementation is
 [`scripts/sol-luna-broker.ps1`](scripts/sol-luna-broker.ps1); its `sol_luna_exec`
 and `sol_luna_poll` tools share task-bound receipts and the same redaction gate.
+
+The complete reference catalog, trade-offs, failure modes, mitigations, and
+GitHub publication checklist are in
+[references/sources.md](references/sources.md).

@@ -36,6 +36,7 @@ $adapters = Get-Content -Raw -LiteralPath $adaptersPath
 $enablement = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/enablement.md')
 $registration = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/registration.md')
 $desktopTask = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/desktop-task-lane.md')
+$sources = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/sources.md')
 $readme = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.md')
 $readmeEn = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.en.md')
 
@@ -129,6 +130,22 @@ Assert-Contains $desktopTask 'HOST_LAUNCH_RECORDED' 'Desktop task guide must gat
 Assert-Contains $desktopTask 'does not call `setupStart`' 'Desktop task guide must forbid sandbox setup/ACL changes'
 Assert-Contains $desktopTask 'No user-owned task: true' 'Desktop task guide must honor the no-user-owned-task gate'
 
+Assert-Contains $sources 'https://github.com/DannyMac180/sol-advisor' 'reference catalog must list sol-advisor'
+Assert-Contains $sources 'https://github.com/yehyakin/codex-sol-control' 'reference catalog must list codex-sol-control'
+Assert-Contains $sources 'https://learn.chatgpt.com/docs/extend/mcp' 'reference catalog must list MCP documentation'
+Assert-Contains $sources 'https://learn.chatgpt.com/docs/app-server' 'reference catalog must list App Server documentation'
+Assert-Contains $sources 'https://learn.chatgpt.com/docs/agent-configuration/subagents' 'reference catalog must list Subagents documentation'
+Assert-Contains $sources 'https://openai.com/index/building-codex-windows-sandbox/' 'reference catalog must list Windows sandbox evidence'
+Assert-Contains $sources 'windows-sandbox-rs/src/setup.rs' 'reference catalog must list sandbox setup source'
+Assert-Contains $sources 'https://developers.openai.com/api/docs/models/gpt-5.6-luna' 'reference catalog must list Luna model reference'
+Assert-Contains $sources 'issues/34399' 'reference catalog must list native allowlist evidence'
+Assert-Contains $sources 'Route trade-offs, known problems, and mitigations' 'reference catalog must document route trade-offs'
+Assert-Contains $sources 'Problem and solution catalog' 'reference catalog must document failure solutions'
+Assert-Contains $sources 'GitHub publication risks and release checklist' 'reference catalog must document release risks'
+Assert-Contains $sources 'license/attribution' 'reference catalog must document attribution risk'
+Assert-Contains $sources 'per-file SHA-256' 'reference catalog must document source/runtime verification'
+Assert-Contains $sources 'PROCESS_CREATION_DENIED' 'reference catalog must document sandbox blockers'
+
 Assert-Contains $enablement 'LUNA_MAX_REQUIRED' 'enablement packet must identify the required capability'
 Assert-Contains $enablement 'gpt-5.6-luna / max' 'enablement packet must bind the Luna model and effort'
 Assert-Contains $enablement 'NOT_ENABLED' 'host must report a missing capability explicitly'
@@ -191,6 +208,8 @@ Assert-Contains $readme '不修改任何 ACL' 'README must document the no-ACL b
 Assert-Contains $readme '原生优先、Desktop task 次选、MCP 最后' 'README must state the Native/Desktop/MCP route in its existing Chinese style'
 Assert-Contains $readme 'HOST_REMEDIATION_REQUIRED' 'README must explain actionable recovery after a block'
 Assert-Contains $readme '最小 PowerShell 探针' 'README must mention the post-permission probe'
+Assert-Contains $readme 'references/sources.md' 'README must expose the complete reference catalog'
+Assert-Contains $readme '主要事项与关键要点' 'README must summarize the main controls'
 
 Assert-Contains $readmeEn 'Native-first -> Desktop-task -> MCP' 'English README must state the Native/Desktop/MCP route priority'
 Assert-Contains $readmeEn 'multi_agent_v1__spawn_agent' 'English README must name the canonical native surface'
@@ -205,6 +224,8 @@ Assert-Contains $readmeEn 'USER_VISIBLE_TASK' 'English README must document the 
 Assert-Contains $readmeEn 'do not broaden permissions' 'English README must document the no-ACL boundary'
 Assert-Contains $readmeEn 'HOST_REMEDIATION_REQUIRED' 'English README must expose actionable host recovery'
 Assert-Contains $readmeEn 'minimal PowerShell read-only probe' 'English README must require the post-repair probe'
+Assert-Contains $readmeEn 'references/sources.md' 'English README must expose the complete reference catalog'
+Assert-Contains $readmeEn 'GitHub publication gates' 'English README must summarize publication controls'
 
 Assert-Contains $enablement 'BROKER_RUN_RECEIPT' 'enablement guide must classify broker receipts'
 Assert-Contains $enablement 'STARTED_UNVERIFIED' 'enablement guide must keep broker identity unverified'
