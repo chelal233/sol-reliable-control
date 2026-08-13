@@ -21,6 +21,7 @@
 - `references/protocol.md`：计划、握手、结果和 fallback packet schema。
 - `references/runtime-adapters.md`：Native generic、custom role、host-managed 三类运行面及 capability preflight / receipt / identity 证据契约。
 - `references/enablement.md`：LUNA_MAX 必须由宿主启用的请求、响应、验收门禁，以及 `config.toml` 与 host surface 的边界。
+- `references/registration.md`：调用者被卡在 Luna/max 前置检查时的注册、刷新、精确调用和恢复步骤。
 - `tests/protocol-contract.ps1`：不依赖宿主的协议契约回归检查。
 - `agents/openai.yaml`：Codex skill 列表的界面元数据。
 

@@ -34,6 +34,7 @@ $protocol = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/protocol.
 $adaptersPath = Join-Path $Root 'references/runtime-adapters.md'
 $adapters = Get-Content -Raw -LiteralPath $adaptersPath
 $enablement = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/enablement.md')
+$registration = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/registration.md')
 
 Assert-Contains $skill 'LUNA_MAX' 'logical Luna route must be explicit'
 Assert-Contains $skill 'gpt-5.6-luna / max' 'Luna route must bind its requested model and effort'
@@ -59,6 +60,7 @@ Assert-Contains $protocol 'retry the identical unavailable packet' 'an unavailab
 Assert-Contains $protocol 'Luna enablement: REQUIRED' 'plan must require Luna enablement'
 Assert-Contains $protocol 'Enablement evidence:' 'handshake must carry Luna enablement evidence'
 Assert-Contains $protocol 'HOST_ENABLEMENT_REQUIRED' 'missing Luna must be a host enablement blocker'
+Assert-Contains $protocol 'Registration action:' 'plan must tell the caller what registration action is next'
 
 Assert-Contains $adapters 'multi_agent_v1__spawn_agent' 'native adapter must name the generic worker surface'
 Assert-Contains $adapters 'fork_context: false' 'native adapter must exclude controller history'
@@ -79,6 +81,24 @@ Assert-Contains $enablement 'top-level Codex session' 'config.toml must be scope
 Assert-Contains $enablement 'does not add a model' 'config.toml must not be treated as a worker allowlist'
 Assert-Contains $enablement 'collaboration.spawn_agent' 'host-owned surface must be named explicitly'
 Assert-Contains $protocol 'configuration boundary' 'protocol must explain config versus host ownership'
+Assert-Contains $protocol 'registration guide' 'protocol must link the registration procedure'
+
+Assert-Contains $registration 'HOST_REGISTRATION_REQUIRED' 'registration guide must classify the host action'
+Assert-Contains $registration 'task_name' 'registration guide must show the native schema'
+Assert-Contains $registration 'fork_turns = "none"' 'registration guide must show fresh context mapping'
+Assert-Contains $registration 'gpt-5.6-luna' 'registration guide must bind Luna'
+Assert-Contains $registration 'reasoning_effort = "max"' 'registration guide must bind max effort'
+Assert-Contains $registration '.codex/agents/luna-max-worker.toml' 'registration guide must show custom-role location'
+Assert-Contains $registration 'config.toml' 'registration guide must explain config limitation'
+Assert-Contains $registration 'HOST_RECEIPT' 'registration guide must define success evidence'
+Assert-Contains $registration 'HOST_ENABLEMENT_REQUIRED' 'registration guide must define blocked recovery'
+Assert-Contains $registration 'refresh' 'registration guide must require capability refresh'
+Assert-Contains $registration 'HOST_REGISTRATION_REQUIRED' 'registration guide must distinguish host registration from task block'
+Assert-Contains $registration 'agent_id' 'registration guide must classify native agent handles'
+Assert-Contains $registration 'HOST_VERIFIED' 'registration guide must retain the high-risk identity gate'
+Assert-Contains $registration 'multi_agent_v1__spawn_agent' 'registration guide must cover the alternate native wrapper'
+Assert-Contains $registration 'fork_context: false' 'registration guide must cover the alternate fresh-context field'
+Assert-Contains $registration 'AGENT_HANDLE' 'registration guide must classify returned agent ids'
 
 Assert-NotContains $skill 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
 Assert-NotContains $protocol 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'

@@ -58,7 +58,7 @@ Any state -> BLOCKED
 
 1. State the goal, observable `done_when`, exclusions, dependencies, risk, task scope, owner, route, identity gate, and verification.
 2. Send the compact plan packet from [references/protocol.md](references/protocol.md).
-3. Require `LUNA_MAX` host enablement preflight; use [references/enablement.md](references/enablement.md) when the host does not advertise the required pair.
+3. Require `LUNA_MAX` host enablement preflight; use [references/enablement.md](references/enablement.md) and the step-by-step [registration guide](references/registration.md) when the host does not advertise the required pair.
 4. Start a fresh execution context when the host supports it; exclude controller history unless a deliberate continuation is required.
 5. Require the handshake packet before allowing implementation. A transport response alone is not permission to execute.
 6. Receive only the structured result, verification output, and evidence/artifact paths. Do not import the worker's full reasoning.
@@ -105,6 +105,13 @@ do not treat generic `BLOCKED` as a completed deployment, and do not substitute
 another model. The skill and `config.toml` can state this requirement but cannot
 register a model in the host-owned `collaboration.spawn_agent` surface; see
 [references/enablement.md](references/enablement.md) for the configuration boundary.
+
+When a caller is blocked before dispatch, follow
+[references/registration.md](references/registration.md): identify the exact
+surface, submit the host registration packet, refresh the capability snapshot,
+then retry preflight only with new evidence. A safe low-risk probe may prove
+that a surface can start Luna, but an `agent_id` and worker self-report alone
+do not satisfy `HOST_VERIFIED` for high-risk work.
 
 For `NATIVE_GENERIC`, `fork_context: false` means fresh context and excluded
 controller history in the current generic spawn schema. A returned `agent_id`

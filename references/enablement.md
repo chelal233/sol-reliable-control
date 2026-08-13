@@ -5,6 +5,12 @@ host's model allowlist from a skill file. Source/runtime synchronization is not
 host enablement. The host owner or host capability layer must perform the
 enablement, then return evidence that Sol can verify.
 
+For a caller-facing registration sequence, use
+[references/registration.md](registration.md). This document defines the
+enablement request and acceptance facts; the registration guide explains where
+to put a custom-role file, which native schema to call, and how to refresh the
+host capability snapshot.
+
 ## Policy
 
 `LUNA_MAX` capability is mandatory for a conforming Sol deployment. A task may

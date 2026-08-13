@@ -14,6 +14,7 @@ Execution context: FRESH | CURRENT
 Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
 Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED
 Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
+Registration action: NONE | REQUEST_HOST_ENABLEMENT | REGISTER_CUSTOM_ROLE | REFRESH_PREFLIGHT
 Capability preflight: REQUIRED
 Task risk: LOW | HIGH
 Identity gate: HOST_DISPATCH | HOST_VERIFIED
@@ -40,6 +41,11 @@ the host must expose the normal Luna capability even when a particular packet
 is independently routed to `SOL_XHIGH`; it does not force every task to use
 Luna. Use [references/enablement.md](enablement.md) for the host request and
 evidence contract.
+
+When enablement is missing, set `Registration action` to the next concrete
+host operation. Do not leave the caller with an unclassified `BLOCKED`: use
+[references/registration.md](registration.md) for the exact native/custom-role
+steps and the post-registration refresh check.
 
 ## Controller states
 
@@ -88,6 +94,10 @@ For `Identity gate: HOST_DISPATCH`, a valid `HOST_RECEIPT` with no explicit host
 
 The complete adapter contract and normalized field mapping are in
 [references/runtime-adapters.md](runtime-adapters.md).
+
+The registration guide and unblock procedure are in
+[references/registration.md](registration.md). It is part of the protocol
+contract for callers that cannot start `LUNA_MAX`.
 
 ## Mandatory Luna enablement gate
 
