@@ -149,6 +149,23 @@ explicitly loads and reports that role; it does not change the current
 capability registry or an explicitly supported custom/managed surface. No
 local Sol config key is evidence of that host-side enablement.
 
+## Explicit Desktop task alternative
+
+Some Desktop hosts expose Luna through a visible app task even when the native
+worker registry is missing. This is the separate `USER_VISIBLE_TASK` adapter
+described in [desktop-task-lane.md](desktop-task-lane.md), not a registration
+mechanism. It may be used only when the plan explicitly sets
+`User-owned task: ALLOWED` and the user grants approval. It must not be created
+to convert `NOT_ENABLED` into `VERIFIED`, and it cannot satisfy a packet that
+forbids user-owned tasks.
+
+The route uses the host's `codex_app__create_thread` with
+`model="gpt-5.6-luna"` and `thinking="max"`, then retains the ready
+`threadId`/`hostId` receipt. Require host-observed effective model/effort and
+fresh/history evidence; UI selection and worker self-report are advisory. This
+route does not run the local MCP broker or perform ACL/token remediation. A
+process-creation or sandbox-permission failure remains an execution blocker.
+
 The installed Sol Luna MCP broker is an explicit managed transport for hosts
 where the native surface is not visible, is schema/model-incompatible, or
 cannot produce the required host evidence. It is the second route, not a

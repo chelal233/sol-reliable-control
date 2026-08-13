@@ -17,6 +17,8 @@
 - 恢复顺序固定为：native 握手 → MCP 握手 → 用户/宿主批准最小注册或 sandbox/token 修复 → 刷新/重绑 → 新 task 的最小 PowerShell 探针；探针成功前不重试实现包。
 - `LUNA_MAX` 正常调度采用“原生优先、MCP 次选”（native-first -> MCP-second）：第一优先使用当前线程可见且契约匹配的 `multi_agent_v1__spawn_agent`，或未来等价、由宿主声明且可验证的 native surface。
 - 只有 native surface 不可见、schema/`gpt-5.6-luna / max` 不匹配，或 native preflight 不能取得所需宿主证据时，才使用 `scripts/sol-luna-broker.ps1` 提供的 `HOST_MANAGED` MCP。MCP 不是 native subagent，也不是静默 model fallback；两条路线都不可用时保持原模型并按现有规则返回 `BLOCKED`。
+- 另提供显式 `USER_VISIBLE_TASK` 路线：参考 `sol-advisor` 的做法，通过宿主的 `codex_app__create_thread` 以 `gpt-5.6-luna / max` 创建用户可见任务。它不是 native sub-agent、不是启用 Luna 的手段，也不会自动替代 MCP；只有计划明确允许 user-owned task 且用户已批准时才能使用。
+- 该桌面任务路线不启动 Sol 本地 broker、不调用 `setupStart`、不执行 PowerShell、不修改任何 ACL；若宿主仍报告 `PROCESS_CREATION_DENIED` 或 sandbox 权限错误，只记录执行阻塞并停止，不申请扩大权限。
 - `collaboration.spawn_agent` 是独立的旧/兼容 schema，不能冒充 canonical `multi_agent_v1__spawn_agent`、混用字段、借用其 capability/receipt，或把自身的 Sol/Terra 枚举当成全局能力结论。
 - broker 默认使用 app-server 的 fresh `thread/start`；若返回精确 `model=gpt-5.6-luna`、`reasoningEffort=max`，先记录为 `HOST_LAUNCH_RECORDED`，同一 turn 无 `model/rerouted` 时身份可升级为 `VERIFIED`。`SOL_LUNA_TRANSPORT=cli` 仅保留为旧版诊断路线。
 - broker 将身份与执行分开报告：匹配的 launch record 且无 reroute 时 `identity=VERIFIED`，即使执行因 Windows sandbox ACL 或进程创建拒绝而 `BLOCKED`；只有 `identity=VERIFIED` 且 `execution_status=COMPLETED` 才返回整体 `HOST_VERIFIED`。MCP payload 会给出脱敏后的 `execution_blocker_code` 与 `execution_blocker`，其中明确区分 `WINDOWS_SANDBOX_ACL_FAILED` 和 `PROCESS_CREATION_DENIED`。
@@ -33,6 +35,7 @@
 - `references/enablement.md`：LUNA_MAX 必须由宿主启用的请求、响应、验收门禁，以及 `config.toml` 与 host surface 的边界。
 - `references/registration.md`：调用者被卡在 Luna/max 前置检查时的注册、刷新、精确调用和恢复步骤。
 - `references/registration.md` 同时区分 native worker、CLI custom-role 和显式 user-visible app task；后者不是 native sub-agent，也不能绕过 `No user-owned task` 约束。
+- `references/desktop-task-lane.md`：显式 Desktop Luna task 的调用字段、fresh/history、receipt/identity 门禁与 ACL 禁止边界。
 - `scripts/sol-luna-broker.ps1`：固定 Luna/max 的本地 STDIO MCP broker，含 fresh/范围/sandbox/receipt 门禁，以及长任务异步提交/轮询。
 - `tests/protocol-contract.ps1`：不依赖宿主的协议契约回归检查。
 - `tests/broker-contract.ps1`：MCP initialize、tools/list、ping 和固定 lane 的 broker 契约检查。

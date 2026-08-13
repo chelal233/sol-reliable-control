@@ -36,6 +36,17 @@ route is `HOST_MANAGED`: MCP is not a native subagent. It is not a silent model 
 If both routes fail, retain the requested `gpt-5.6-luna / max` and return
 `BLOCKED` under the existing failure rules.
 
+There is also an explicit `USER_VISIBLE_TASK` route, following the approach in
+`sol-advisor`: use the host-owned `codex_app__create_thread` surface with
+`gpt-5.6-luna / max` to create a visible task. It is not a native sub-agent, a
+Luna enablement mechanism, or an automatic MCP fallback. It is allowed only
+when the plan permits a user-owned task and the user has explicitly approved it.
+
+This Desktop task route does not start the local Sol broker, call `setupStart`,
+run PowerShell, or change ACLs. If the host still reports
+`PROCESS_CREATION_DENIED` or a sandbox permission error, record the execution
+blocker and stop; do not broaden permissions.
+
 The managed MCP broker starts a fresh ephemeral app-server thread, captures
 the host launch record, and rejects `model/rerouted` events. The legacy CLI
 transport is diagnostic only (`SOL_LUNA_TRANSPORT=cli`) and remains
@@ -113,6 +124,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests/privacy-contract.ps1
 ```
 
 See [SKILL.md](SKILL.md) and the files under `references/` for the complete
-protocol and registration rules. The broker implementation is
+protocol and registration rules, including
+[references/desktop-task-lane.md](references/desktop-task-lane.md) for the
+explicit Desktop Luna task route. The broker implementation is
 [`scripts/sol-luna-broker.ps1`](scripts/sol-luna-broker.ps1); its `sol_luna_exec`
 and `sol_luna_poll` tools share task-bound receipts and the same redaction gate.

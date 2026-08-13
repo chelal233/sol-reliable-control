@@ -30,6 +30,10 @@ Choose the cheapest route that satisfies the task:
 - `LUNA_MAX` capability is mandatory for a conforming Sol deployment. The host must expose `gpt-5.6-luna / max` on a verified dispatch surface; a missing capability is a host enablement blocker, not an acceptable normal state.
 - Escalation gate: if the same issue has been rejected more than twice under `luna-max`, or unclear business semantics repeatedly cause regressions, stop retrying `luna-max` and submit the issue to `sol-xhigh` with the failure evidence.
 - `Fallback`: Use only when the requested lane cannot run and the plan explicitly permits a safe compatibility lane. The compatibility lane may be any available lane, must be labeled unverified, and may not silently replace normal routing.
+- `USER_VISIBLE_TASK`: An explicit Desktop app task lane based on the host's
+  `codex_app__create_thread` surface. It is permitted only when the user has
+  explicitly authorized a user-owned task in the current plan; it is never an
+  automatic fallback and never a way to register Luna.
 
 Normal execution has only the `luna-max` and `sol-xhigh` lanes. Do not select a lane by name, price, or prestige; use task fit and acceptance evidence.
 
@@ -44,6 +48,13 @@ For every normal `LUNA_MAX` dispatch, use this Native-first dispatch ladder:
    preflight cannot obtain the required host evidence.
 3. If neither route passes its own preflight, preserve `LUNA_MAX` and return
    `BLOCKED` under the existing fail-closed rules. Do not switch models.
+
+The explicit Desktop task lane is outside this normal ladder. Select it only
+when the plan sets `Surface: USER_VISIBLE_TASK`,
+`Dispatch priority: EXPLICIT_USER_VISIBLE_TASK`, `User-owned task: ALLOWED`,
+and records the user's approval. This opt-in route is useful when the local MCP
+broker would invoke a Windows sandbox that the user has forbidden Sol to repair;
+it does not grant Sol permission to create a visible task by itself.
 
 ## Controller state
 
@@ -143,7 +154,9 @@ prompt: the compact plan packet plus the result-packet rules
 `LUNA_MAX` and `SOL_XHIGH` are logical lanes. The surface adapter resolves a
 logical route to a host schema; never assume that a lane name is a registered
 agent type. `NATIVE_GENERIC`, `CUSTOM_ROLE`, and `HOST_MANAGED` are separate
-adapters with separate evidence rules.
+adapters with separate evidence rules. `USER_VISIBLE_TASK` is a fourth,
+explicitly user-owned adapter with its own receipt and host-observation rules;
+it is not interchangeable with a native worker or the MCP broker.
 
 The canonical native v1 contract is `multi_agent_v1__spawn_agent`. A future
 native surface may take priority 1 only when it is visible in the current
@@ -196,8 +209,27 @@ and self-report evidence to `HOST_VERIFIED`.
 For `CUSTOM_ROLE`, the host must prove the registered role and launch record
 (`agent_type`, fresh fork, model, effort, and receipt). A TOML/config file alone
 is not proof. `HOST_MANAGED` is valid only when the host returns the same
-task-bound evidence. None of these adapters may be replaced by a new
-user-owned task to obtain a model.
+task-bound evidence. A user-owned Desktop task is a separate explicit adapter;
+it may be selected only when the plan and user approval allow it. It must never
+be created merely to obtain a model or to bypass a `No user-owned task` gate.
+
+### Explicit Desktop Luna task lane
+
+Some clients expose Luna/max through a visible Codex task rather than a native
+worker tool. Follow [references/desktop-task-lane.md](references/desktop-task-lane.md)
+for the exact `codex_app__list_projects`, `codex_app__create_thread`,
+`codex_app__wait_threads`, `codex_app__read_thread`, and
+`codex_app__send_message_to_thread` sequence. The route uses the host's
+`model="gpt-5.6-luna"` and `thinking="max"` fields, requires a fresh task, and
+keeps controller history out of the initial prompt.
+
+This route does not call the local Sol broker, `setupStart`, PowerShell, or ACL
+APIs. It is therefore the safe alternative when the user forbids external
+permission changes. It still runs under whatever execution policy the Desktop
+host reports: a `PROCESS_CREATION_DENIED` result is an execution block, not a
+reason to request broad ACL changes. The app task's `threadId`/`hostId` is a
+transport receipt only until the host reports effective Luna/max; UI selection
+and worker self-report remain advisory.
 
 ### MCP Luna broker
 

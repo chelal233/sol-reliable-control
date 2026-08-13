@@ -35,6 +35,7 @@ $adaptersPath = Join-Path $Root 'references/runtime-adapters.md'
 $adapters = Get-Content -Raw -LiteralPath $adaptersPath
 $enablement = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/enablement.md')
 $registration = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/registration.md')
+$desktopTask = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/desktop-task-lane.md')
 $readme = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.md')
 $readmeEn = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.en.md')
 
@@ -55,6 +56,10 @@ Assert-Contains $skill 'THREAD_SURFACE_NOT_VISIBLE' 'thread-bound surface gaps m
 Assert-Contains $skill 'Native-first dispatch ladder' 'Luna dispatch must define an operational priority ladder'
 Assert-Contains $skill 'native preflight cannot obtain the required host evidence' 'managed MCP must require a concrete native-preflight failure'
 Assert-Contains $skill 'MCP is not a native subagent' 'managed MCP must not be represented as native execution'
+Assert-Contains $skill 'USER_VISIBLE_TASK' 'explicit Desktop Luna task adapter must be documented'
+Assert-Contains $skill 'EXPLICIT_USER_VISIBLE_TASK' 'Desktop task lane must require an explicit plan override'
+Assert-Contains $skill 'codex_app__create_thread' 'Desktop task lane must name the host app surface'
+Assert-Contains $skill 'does not call the local Sol broker' 'Desktop task lane must avoid the local ACL-triggering broker'
 Assert-Contains $skill 'Bounded recovery loop' 'skill must define a bounded recovery workflow after a block'
 Assert-Contains $skill 'HOST_REMEDIATION_REQUIRED' 'skill must return an actionable host remediation state'
 Assert-Contains $skill 'smallest official' 'skill must require minimal approved host changes'
@@ -78,6 +83,11 @@ Assert-Contains $protocol 'HOST_JOB_RECEIPT' 'protocol must define asynchronous 
 Assert-Contains $protocol 'sol_luna_poll' 'protocol must define asynchronous broker result retrieval'
 Assert-Contains $protocol 'Dispatch priority: NATIVE_FIRST_THEN_MCP' 'plan must bind Luna to native-first then MCP-second routing'
 Assert-Contains $protocol 'MCP is not native evidence' 'protocol must keep managed transport evidence distinct from native evidence'
+Assert-Contains $protocol 'Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | USER_VISIBLE_TASK' 'protocol must expose the explicit Desktop task surface'
+Assert-Contains $protocol 'Dispatch priority: NATIVE_FIRST_THEN_MCP | EXPLICIT_USER_VISIBLE_TASK' 'protocol must separate the normal ladder from the explicit task route'
+Assert-Contains $protocol 'User-owned task: DENIED | ALLOWED' 'protocol must gate user-owned Desktop tasks'
+Assert-Contains $protocol 'User approval: REQUIRED | GRANTED | NOT_REQUIRED' 'protocol must record explicit task approval'
+Assert-Contains $protocol 'codex_app__create_thread' 'protocol must define the Desktop task invocation'
 Assert-Contains $protocol 'No silent model fallback' 'route failure must never silently replace the requested model'
 Assert-Contains $protocol 'Recovery policy: BOUNDED_HOST_REMEDIATION' 'plan must declare bounded host recovery policy'
 Assert-Contains $protocol 'Permission request:' 'protocol must carry an explicit permission request'
@@ -103,6 +113,19 @@ Assert-Contains $protocol 'HOST_LAUNCH_RECORDED' 'protocol must distinguish host
 Assert-Contains $adapters 'Priority 1: current-thread native' 'adapter order must make current-thread native primary'
 Assert-Contains $adapters 'Priority 2: HOST_MANAGED MCP' 'adapter order must make the broker secondary'
 Assert-Contains $adapters 'cannot impersonate `multi_agent_v1__spawn_agent`' 'legacy collaboration schema must not masquerade as canonical native v1'
+Assert-Contains $adapters 'Adapter: USER_VISIBLE_TASK' 'runtime adapters must document the explicit Desktop task route'
+Assert-Contains $adapters 'User-owned task: ALLOWED' 'Desktop task adapter must require explicit user ownership permission'
+Assert-Contains $adapters 'thinking="max"' 'Desktop task adapter must bind max effort'
+Assert-Contains $adapters 'starts the local Sol broker' 'Desktop task adapter must prohibit local broker/ACL remediation'
+
+Assert-Contains $desktopTask 'codex_app__list_projects' 'Desktop task guide must require project discovery'
+Assert-Contains $desktopTask 'codex_app__create_thread' 'Desktop task guide must define task creation'
+Assert-Contains $desktopTask 'model: "gpt-5.6-luna"' 'Desktop task guide must bind Luna'
+Assert-Contains $desktopTask 'thinking: "max"' 'Desktop task guide must bind max effort'
+Assert-Contains $desktopTask 'threadId' 'Desktop task guide must define a task-bound receipt'
+Assert-Contains $desktopTask 'HOST_LAUNCH_RECORDED' 'Desktop task guide must gate host launch evidence'
+Assert-Contains $desktopTask 'does not call `setupStart`' 'Desktop task guide must forbid sandbox setup/ACL changes'
+Assert-Contains $desktopTask 'No user-owned task: true' 'Desktop task guide must honor the no-user-owned-task gate'
 
 Assert-Contains $enablement 'LUNA_MAX_REQUIRED' 'enablement packet must identify the required capability'
 Assert-Contains $enablement 'gpt-5.6-luna / max' 'enablement packet must bind the Luna model and effort'
@@ -151,10 +174,17 @@ Assert-Contains $registration 'Approval: REQUIRED' 'registration must require ex
 Assert-Contains $registration 'PROCESS_START=YES' 'registration must define the successful execution probe'
 Assert-Contains $registration 'no broad user-root/full-control ACL' 'registration must prohibit broad ACL requests'
 
+Assert-Contains $registration 'Step 2D: explicit Desktop Luna task lane' 'registration must document the alternative Desktop task route'
+Assert-Contains $registration 'codex_app__create_thread' 'registration must define the Desktop task call'
+Assert-Contains $registration 'User approval: GRANTED' 'registration must require explicit user approval'
+Assert-Contains $registration 'do not request' 'registration must prohibit ACL remediation on this route'
+
 Assert-Contains $readme 'README.en.md' 'README must expose the English companion'
 Assert-Contains $readme 'sol-advisor' 'README must record the Sol advisor reference project'
 Assert-Contains $readme 'codex-sol-control' 'README must record the Codex Sol control reference project'
 Assert-Contains $readme 'MCP' 'README must describe the managed broker surface'
+Assert-Contains $readme 'USER_VISIBLE_TASK' 'README must document the explicit Desktop task alternative'
+Assert-Contains $readme '不修改任何 ACL' 'README must document the no-ACL boundary'
 Assert-Contains $readme '原生优先、MCP 次选' 'README must state the native-first route in its existing Chinese style'
 Assert-Contains $readme 'HOST_REMEDIATION_REQUIRED' 'README must explain actionable recovery after a block'
 Assert-Contains $readme '最小 PowerShell 探针' 'README must mention the post-permission probe'
@@ -168,11 +198,16 @@ Assert-Contains $readmeEn 'MCP is not a native subagent' 'English README must ke
 Assert-Contains $readmeEn 'not a silent model fallback' 'English README must forbid silent model fallback'
 Assert-Contains $readmeEn 'retain the requested `gpt-5.6-luna / max`' 'English README must preserve the requested Luna model and effort on route failure'
 Assert-Contains $readmeEn 'BLOCKED' 'English README must fail closed when both Luna routes fail'
+Assert-Contains $readmeEn 'USER_VISIBLE_TASK' 'English README must document the explicit Desktop task alternative'
+Assert-Contains $readmeEn 'do not broaden permissions' 'English README must document the no-ACL boundary'
 Assert-Contains $readmeEn 'HOST_REMEDIATION_REQUIRED' 'English README must expose actionable host recovery'
 Assert-Contains $readmeEn 'minimal PowerShell read-only probe' 'English README must require the post-repair probe'
 
 Assert-Contains $enablement 'BROKER_RUN_RECEIPT' 'enablement guide must classify broker receipts'
 Assert-Contains $enablement 'STARTED_UNVERIFIED' 'enablement guide must keep broker identity unverified'
+Assert-Contains $enablement 'USER_VISIBLE_TASK' 'enablement guide must separate the explicit Desktop task route'
+Assert-Contains $enablement 'User-owned task: ALLOWED' 'enablement guide must require explicit ownership permission'
+Assert-Contains $enablement 'does not run the local MCP broker' 'enablement guide must prohibit local ACL-triggering execution'
 
 Assert-NotContains $skill 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
 Assert-NotContains $protocol 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'

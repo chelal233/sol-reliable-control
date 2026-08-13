@@ -23,7 +23,7 @@ Task packet: <bounded plan packet>
 The adapter returns these facts before execution is authorized:
 
 ```text
-Surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | UNKNOWN
+Surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | USER_VISIBLE_TASK | UNKNOWN
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
 Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
@@ -166,6 +166,38 @@ valid only when the host returns the same normalized evidence: a task-bound
 `HOST_RECEIPT`, fresh-context proof, controller-history proof, and host-owned
 identity evidence. It is an internal dispatch surface, not permission to
 create a new user-owned Codex task merely to obtain a model.
+
+## Adapter: USER_VISIBLE_TASK
+
+This is an explicit Desktop app task adapter, based on the route documented by
+`sol-advisor`. It is outside the normal native-first -> MCP-second ladder and
+requires all of the following plan facts:
+
+```text
+Surface: USER_VISIBLE_TASK
+Dispatch priority: EXPLICIT_USER_VISIBLE_TASK
+User-owned task: ALLOWED
+User approval: GRANTED
+Requested model/effort: gpt-5.6-luna / max
+Execution context: FRESH
+Controller history: EXCLUDED
+```
+
+The host tools are `codex_app__list_projects`,
+`codex_app__create_thread`, `codex_app__wait_threads`,
+`codex_app__read_thread`, and (only for an approved continuation)
+`codex_app__send_message_to_thread`. The create call uses
+`model="gpt-5.6-luna"` and `thinking="max"`; a ready `threadId` plus `hostId`
+is the transport receipt. A pending `clientThreadId`, an existing thread, a
+fork, a UI picker, or worker self-report cannot prove freshness or identity.
+
+The app task host must independently report effective model/effort and the
+fresh/history facts before the result can reach `HOST_VERIFIED`. If it reports
+`PROCESS_CREATION_DENIED`, `WINDOWS_SANDBOX_ACL_FAILED`, or another permission
+failure, keep identity and execution separate and stop. This adapter never
+starts the local Sol broker, invokes `setupStart`, changes ACLs, or broadens
+permissions. It is not a native subagent and it must not be silently selected
+when `User-owned task` is denied.
 
 ### MCP broker variant
 

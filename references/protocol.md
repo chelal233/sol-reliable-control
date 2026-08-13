@@ -12,8 +12,10 @@ Controller: SOL
 Route: DIRECT | SOL_ONLY | LUNA_MAX | SOL_XHIGH | FALLBACK
 Execution context: FRESH | CURRENT
 Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
-Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED
-Dispatch priority: NATIVE_FIRST_THEN_MCP
+Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | USER_VISIBLE_TASK
+Dispatch priority: NATIVE_FIRST_THEN_MCP | EXPLICIT_USER_VISIBLE_TASK
+User-owned task: DENIED | ALLOWED
+User approval: REQUIRED | GRANTED | NOT_REQUIRED
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Recovery policy: BOUNDED_HOST_REMEDIATION | NONE
 Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
@@ -53,6 +55,13 @@ For a normal `LUNA_MAX` packet, `NATIVE_FIRST_THEN_MCP` is an ordered contract:
 3. If MCP preflight also fails, return `BLOCKED` with both surface failures and
    keep the requested `gpt-5.6-luna / max` binding. No silent model fallback is
    permitted.
+
+The Desktop app task lane is not an implicit third step. It is selected only by
+an explicit plan with `Surface: USER_VISIBLE_TASK`,
+`Dispatch priority: EXPLICIT_USER_VISIBLE_TASK`, `User-owned task: ALLOWED`,
+and `User approval: GRANTED`. It must never be created merely to prove host
+enablement or to bypass a `No user-owned task: true` packet. See
+[references/desktop-task-lane.md](desktop-task-lane.md).
 
 Capability snapshots are thread- and host-bound. Enumerate worker tools from
 the same controller thread that will dispatch the packet. The preferred native
@@ -162,6 +171,11 @@ gate; it is not a mechanism for hiding a missing mandatory Luna capability.
 When Luna enablement is required, `Fallback: BLOCKED` remains in force and a
 new user-owned task must not be created as an enablement workaround.
 
+An explicitly approved Desktop task is a separate execution choice, not host
+enablement evidence. It may be used only when the caller changes the plan to
+allow a user-owned task and records the approval; otherwise the no-user-owned-
+task gate remains binding.
+
 ## Configuration boundary
 
 `config.toml` controls the top-level Codex session's model/effort selection; it
@@ -233,6 +247,32 @@ the child must not be used as the source of unobservable model identity. A
 role file, agent name, or self-report alone is not evidence. `HOST_MANAGED`
 dispatch follows the same receipt and proof requirements without creating a
 new user-owned task.
+
+### Explicit Desktop Luna task dispatch
+
+When the plan explicitly permits a visible user-owned task, use the Codex app
+task surface described in [references/desktop-task-lane.md](desktop-task-lane.md):
+
+```text
+codex_app__list_projects({})
+codex_app__create_thread({
+  target: { type: "project", projectId: <selected project id>,
+            environment: { type: "worktree",
+                            startingState: { type: "working-tree" } } },
+  model: "gpt-5.6-luna",
+  thinking: "max",
+  prompt: <fresh handshake-only packet>
+})
+```
+
+The ready response's `threadId` and `hostId` form the task-bound transport
+receipt. Use `codex_app__wait_threads` and `codex_app__read_thread` on that same
+pair; use `codex_app__send_message_to_thread` only for an explicitly approved
+follow-up. `HOST_LAUNCH_RECORDED` still requires host-observed effective
+Luna/max, not the UI picker or worker self-report. A pending `clientThreadId`,
+an existing thread, or a fork is not fresh evidence. This route never invokes
+the local Sol broker or performs ACL/token remediation; a process-creation
+failure remains an execution blocker.
 
 ### MCP Luna broker dispatch
 

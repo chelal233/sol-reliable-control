@@ -328,6 +328,46 @@ is allowed only when the current plan explicitly permits it. It is not a way
 to satisfy a `No user-owned task: true` packet or a substitute for native
 subagent evidence.
 
+### Step 2D: explicit Desktop Luna task lane
+
+The [desktop task lane](desktop-task-lane.md) is the safe alternative when the
+caller explicitly accepts a visible user-owned task and forbids Sol from
+touching Windows ACLs or starting a local broker. It is not an enablement
+registration step. The plan must contain:
+
+```text
+Surface: USER_VISIBLE_TASK
+Dispatch priority: EXPLICIT_USER_VISIBLE_TASK
+User-owned task: ALLOWED
+User approval: GRANTED
+Requested model/effort: gpt-5.6-luna / max
+Execution context: FRESH
+Controller history: EXCLUDED
+```
+
+Use the host-owned Codex app tools, not PowerShell or the Sol broker:
+
+```text
+codex_app__list_projects({})
+codex_app__create_thread({
+  target: { type: "project", projectId: <selected project id>,
+            environment: { type: "worktree",
+                            startingState: { type: "working-tree" } } },
+  model: "gpt-5.6-luna",
+  thinking: "max",
+  prompt: <fresh handshake-only packet>
+})
+```
+
+Keep the returned `threadId` and `hostId` together. Wait and read only that
+task; use a follow-up message only after the handshake is accepted and the user
+has approved implementation. A ready receipt proves transport, not identity.
+Require host-observed effective Luna/max and fresh/history evidence before
+`HOST_VERIFIED`. A pending `clientThreadId`, UI model selection, or worker
+self-report is insufficient. If the task reports `PROCESS_CREATION_DENIED` or
+`WINDOWS_SANDBOX_ACL_FAILED`, stop with an execution blocker; do not request
+or perform broad ACL/token changes.
+
 ## Step 5: execute the caller's bounded packet
 
 Only after registration is verified, use the exact schema-specific call:
