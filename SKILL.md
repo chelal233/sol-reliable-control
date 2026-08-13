@@ -142,6 +142,42 @@ is not proof. `HOST_MANAGED` is valid only when the host returns the same
 task-bound evidence. None of these adapters may be replaced by a new
 user-owned task to obtain a model.
 
+### MCP Luna broker
+
+When the native worker surface is not injected into the current Desktop thread,
+the installed `sol_luna_broker` MCP server is the explicit `HOST_MANAGED`
+transport adapter. It is not a silent compatibility fallback and it is not a
+native subagent. The broker must:
+
+- launch a fresh ephemeral CLI process with `--ignore-user-config`,
+  `--strict-config`, `gpt-5.6-luna`, and `max`;
+- validate the task id, workdir, sandbox, prompt size, and allowed roots before
+  starting the process;
+- require `handshake_only=true` with `read-only` sandbox before implementation;
+- return a task-bound `BROKER_RUN_RECEIPT`, runtime version/hash, fresh/history
+  facts, and the worker result; and
+- label model self-report as advisory. A broker receipt is not a `HOST_RECEIPT`
+  and cannot satisfy `HOST_VERIFIED` without host-observed model/effort or an
+  authoritative host launch record.
+
+The caller invokes the fixed tool as:
+
+```text
+sol_luna_exec({
+  task_id: <stable id>,
+  workdir: <approved worktree>,
+  prompt: <compact Sol packet>,
+  sandbox: "read-only" | "workspace-write",
+  handshake_only: true | false
+})
+```
+
+Use the broker as the operational Luna path when the native surface is absent;
+keep the high-risk identity gate closed until the host supplies independent
+identity evidence. The broker implementation and contract test live under
+`scripts/sol-luna-broker.ps1` and `tests/broker-contract.ps1` in the installed
+skill.
+
 The `SOL_XHIGH` lane must request `gpt-5.6-sol / xhigh`; if the host cannot
 honor it, classify the failure as `runtime` or `model_identity` and do not
 silently downgrade. If `LUNA_MAX` is unavailable, select `SOL_XHIGH` only when

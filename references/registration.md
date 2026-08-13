@@ -128,6 +128,52 @@ Do not infer from this alternate schema that the host has no Luna capability
 when `multi_agent_v1__spawn_agent` is visible on the same Desktop host. Schema
 visibility is thread-bound and must be recorded in the capability snapshot.
 
+## Step 2C: register the Sol Luna MCP broker
+
+Use this explicit `HOST_MANAGED` adapter when the current Desktop thread does
+not expose a native worker surface. Install the skill first, then add the
+server to the host's `config.toml`:
+
+```toml
+[mcp_servers.sol_luna_broker]
+command = "pwsh"
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "C:\\Users\\PC\\.codex\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
+enabled = true
+
+[mcp_servers.sol_luna_broker.env]
+SOL_LUNA_ALLOWED_ROOTS = "E:\\Sources\\.codex-worktrees;E:\\git\\sol-reliable-control-worktrees;E:\\git\\sol-reliable-control"
+```
+
+Set `SOL_LUNA_ALLOWED_ROOTS` in the server environment when the default roots
+do not contain the target worktree. The broker's only tool is:
+
+```text
+sol_luna_exec({
+  task_id: <stable id>,
+  workdir: <approved worktree>,
+  prompt: <bounded Sol packet>,
+  sandbox: "read-only" | "workspace-write",
+  handshake_only: true | false
+})
+```
+
+The first call must use `handshake_only=true` and `sandbox="read-only"`. The
+broker pins `gpt-5.6-luna / max`, starts a fresh ephemeral CLI process, and
+returns a `BROKER_RUN_RECEIPT` containing the runtime version/hash and thread
+id. This is a transport receipt, not a `HOST_RECEIPT`; worker self-report is
+advisory. If host-observed model/effort is absent, record
+`STARTED_UNVERIFIED` and keep `HOST_VERIFIED` closed for high-risk work.
+
+The broker contract can be checked without launching a worker:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File `
+  "$CODEX_HOME/skills/sol-reliable-control/tests/broker-contract.ps1"
+```
+
+This route is an operational Luna path, not a new user-owned Codex task and not
+permission to silently replace the native surface's identity evidence.
+
 ## Step 3: optional CLI custom-role registration
 
 Use this path only when the host explicitly supports and reports a

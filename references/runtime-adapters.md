@@ -63,7 +63,10 @@ current callable surfaces in this order:
    `gpt-5.6-luna / max`.
 2. A `CUSTOM_ROLE` or `HOST_MANAGED` surface with an authoritative role/launch
    record for `luna-max-worker`.
-3. `collaboration.spawn_agent` only when its declared schema and model matrix
+3. The installed `sol_luna_broker` MCP surface as an explicit managed
+   transport; it can start Luna but remains `STARTED_UNVERIFIED` without host
+   identity telemetry.
+4. `collaboration.spawn_agent` only when its declared schema and model matrix
    contain the required Luna pair.
 
 If a thread exposes only `collaboration.spawn_agent` with
@@ -155,6 +158,42 @@ valid only when the host returns the same normalized evidence: a task-bound
 `HOST_RECEIPT`, fresh-context proof, controller-history proof, and host-owned
 identity evidence. It is an internal dispatch surface, not permission to
 create a new user-owned Codex task merely to obtain a model.
+
+### MCP broker variant
+
+The Sol Luna broker is a local STDIO MCP server that provides an explicit
+`HOST_MANAGED` transport when the current controller thread cannot see a native
+worker tool. Its stable tool schema is:
+
+```text
+sol_luna_exec({
+  task_id: <stable id>,
+  workdir: <approved worktree>,
+  prompt: <bounded packet>,
+  sandbox: "read-only" | "workspace-write",
+  handshake_only: true | false
+})
+```
+
+The broker itself fixes `gpt-5.6-luna / max`, starts `codex exec --ephemeral`
+with user configuration ignored and strict parsing enabled, and returns:
+
+```text
+surface: HOST_MANAGED
+receipt kind: BROKER_RUN_RECEIPT
+fresh: true
+history: EXCLUDED
+identity proof kind: SELF_REPORT_ONLY | UNKNOWN
+host observed model/effort: UNKNOWN unless the host supplies telemetry
+```
+
+`BROKER_RUN_RECEIPT` is task-bound to the broker invocation but is not a
+`HOST_RECEIPT`. A matching worker self-report proves only that the requested
+prompt was answered; it does not prove the effective runtime identity. Treat a
+successful broker run as `STARTED_UNVERIFIED` and keep `HOST_VERIFIED` closed
+until the host returns independent model/effort evidence or an authoritative
+launch record. This adapter may be the operational Luna path, but it must not
+silently downgrade a high-risk plan.
 
 ## Gate evaluation
 

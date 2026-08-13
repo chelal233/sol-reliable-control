@@ -74,6 +74,9 @@ Assert-Contains $adapters 'HOST_OBSERVED_MODEL_EFFORT' 'native identity must com
 Assert-Contains $adapters 'ROLE_MAPPING_AND_LAUNCH_RECORD' 'custom identity must come from host launch evidence'
 Assert-Contains $adapters 'AGENT_HANDLE' 'agent handles must not be treated as identity proof'
 Assert-Contains $adapters 'TOML/config alone is not proof' 'local role configuration must not self-authorize dispatch'
+Assert-Contains $adapters 'MCP broker variant' 'managed Luna broker adapter must be documented'
+Assert-Contains $adapters 'BROKER_RUN_RECEIPT' 'broker receipt must remain distinct from host receipt'
+Assert-Contains $adapters 'STARTED_UNVERIFIED' 'broker self-report must remain unverified'
 
 Assert-Contains $enablement 'LUNA_MAX_REQUIRED' 'enablement packet must identify the required capability'
 Assert-Contains $enablement 'gpt-5.6-luna / max' 'enablement packet must bind the Luna model and effort'
@@ -105,6 +108,11 @@ Assert-Contains $registration 'fork_context: false' 'registration guide must cov
 Assert-Contains $registration 'AGENT_HANDLE' 'registration guide must classify returned agent ids'
 Assert-Contains $registration 'THREAD_SURFACE_NOT_VISIBLE' 'registration guide must handle per-thread surface gaps'
 Assert-Contains $registration 'user-visible app task' 'registration guide must separate app tasks from native workers'
+Assert-Contains $registration 'sol_luna_broker' 'registration guide must expose the operational broker'
+Assert-Contains $registration 'broker-contract.ps1' 'registration guide must expose broker verification'
+
+Assert-Contains $enablement 'BROKER_RUN_RECEIPT' 'enablement guide must classify broker receipts'
+Assert-Contains $enablement 'STARTED_UNVERIFIED' 'enablement guide must keep broker identity unverified'
 
 Assert-NotContains $skill 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
 Assert-NotContains $protocol 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'

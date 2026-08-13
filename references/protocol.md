@@ -210,6 +210,31 @@ role file, agent name, or self-report alone is not evidence. `HOST_MANAGED`
 dispatch follows the same receipt and proof requirements without creating a
 new user-owned task.
 
+### MCP Luna broker dispatch
+
+When native worker tools are absent from the current thread, the caller may
+select the installed `sol_luna_broker` MCP server as an explicit `HOST_MANAGED`
+transport adapter:
+
+```text
+sol_luna_exec({
+  task_id: <stable id>,
+  workdir: <approved worktree>,
+  prompt: <compact packet>,
+  sandbox: "read-only" | "workspace-write",
+  handshake_only: true | false
+})
+```
+
+The broker fixes `gpt-5.6-luna / max`, starts a fresh ephemeral CLI process,
+excludes controller history, and returns a task-bound `BROKER_RUN_RECEIPT`.
+That receipt is not a host receipt. The broker's `host_observed_model` and
+`host_observed_effort` remain `UNKNOWN` unless the host supplies independent
+telemetry; a matching worker self-report is `SELF_REPORT_ONLY`. The normalized
+result is therefore `STARTED_UNVERIFIED` until host identity evidence arrives.
+It is a usable operational Luna path, not permission to bypass `HOST_VERIFIED`
+for high-risk implementation.
+
 ## Lane selection
 
 - Select `luna-max` by default for bounded work and difficult work whose scope remains narrow and independently verifiable.
