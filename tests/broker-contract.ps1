@@ -27,6 +27,7 @@ Assert-Contains $scriptText '--strict-config' 'broker must reject unknown runtim
 Assert-Contains $scriptText 'BROKER_RUN_RECEIPT' 'broker must label its receipt separately from HOST_RECEIPT'
 Assert-Contains $scriptText 'SELF_REPORT_ONLY' 'broker must keep self-report identity advisory'
 Assert-Contains $scriptText 'Effective model' 'broker must parse labeled effective-model self-reports'
+Assert-Contains $scriptText 'Normalize-ObservedValue' 'broker must treat explicit unknown self-report markers as unobserved'
 
 $requests = @(
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}',

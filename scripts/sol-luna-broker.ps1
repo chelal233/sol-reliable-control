@@ -245,6 +245,21 @@ function Get-FirstLabeledField {
     return $match.Groups[1].Value.Trim()
 }
 
+function Normalize-ObservedValue {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string] $Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    $normalized = $Value.Trim()
+    if ($normalized -match '^(?i:NOT[_ -]?OBSERVABLE|UNOBSERVABLE|UNKNOWN|N/?A|<[^>]+>)$') {
+        return $null
+    }
+    return $normalized
+}
+
 function Get-ThreadId {
     param([Parameter(Mandatory = $true)] [object[]] $Events)
 
@@ -328,9 +343,11 @@ function Invoke-LunaTool {
     $selfModel = Get-FirstField -Text $text -Field 'SELF_REPORTED_MODEL'
     if (-not $selfModel) { $selfModel = Get-FirstField -Text $text -Field 'MODEL' }
     if (-not $selfModel) { $selfModel = Get-FirstLabeledField -Text $text -Label 'Effective model' }
+    $selfModel = Normalize-ObservedValue $selfModel
     $selfEffort = Get-FirstField -Text $text -Field 'SELF_REPORTED_EFFORT'
     if (-not $selfEffort) { $selfEffort = Get-FirstField -Text $text -Field 'EFFORT' }
     if (-not $selfEffort) { $selfEffort = Get-FirstLabeledField -Text $text -Label 'Effort' }
+    $selfEffort = Normalize-ObservedValue $selfEffort
 
     $identity = 'UNVERIFIED'
     $blocker = 'Self-report matches, but no host-observed identity telemetry was returned'
