@@ -27,6 +27,7 @@ Choose the cheapest route that satisfies the task:
 - `Sol -> luna-max`: Default for clear, bounded, independently verifiable work and difficult work whose scope remains narrow. Request `gpt-5.6-luna / max`.
 - `Sol -> sol-xhigh`: Difficult work requiring deeper reasoning, cross-cutting planning, arbitration, or final review. Request `gpt-5.6-sol / xhigh`.
 - `luna-max -> sol-xhigh`: Escalate only when task fit or acceptance requires stronger Sol reasoning. A lane failure alone is not a reason to escalate.
+- `LUNA_MAX` capability is mandatory for a conforming Sol deployment. The host must expose `gpt-5.6-luna / max` on a verified dispatch surface; a missing capability is a host enablement blocker, not an acceptable normal state.
 - Escalation gate: if the same issue has been rejected more than twice under `luna-max`, or unclear business semantics repeatedly cause regressions, stop retrying `luna-max` and submit the issue to `sol-xhigh` with the failure evidence.
 - `Fallback`: Use only when the requested lane cannot run and the plan explicitly permits a safe compatibility lane. The compatibility lane may be any available lane, must be labeled unverified, and may not silently replace normal routing.
 
@@ -57,12 +58,13 @@ Any state -> BLOCKED
 
 1. State the goal, observable `done_when`, exclusions, dependencies, risk, task scope, owner, route, identity gate, and verification.
 2. Send the compact plan packet from [references/protocol.md](references/protocol.md).
-3. Start a fresh execution context when the host supports it; exclude controller history unless a deliberate continuation is required.
-4. Require the handshake packet before allowing implementation. A transport response alone is not permission to execute.
-5. Receive only the structured result, verification output, and evidence/artifact paths. Do not import the worker's full reasoning.
-6. Review the result against `done_when`, scope, contradictions, regressions, and evidence freshness.
-7. Allow at most one focused correction with the original scope and owner. Re-review the corrected result.
-8. Return `PASS`, `FIX`, or `BLOCKED`; Sol alone decides the overall result.
+3. Require `LUNA_MAX` host enablement preflight; use [references/enablement.md](references/enablement.md) when the host does not advertise the required pair.
+4. Start a fresh execution context when the host supports it; exclude controller history unless a deliberate continuation is required.
+5. Require the handshake packet before allowing implementation. A transport response alone is not permission to execute.
+6. Receive only the structured result, verification output, and evidence/artifact paths. Do not import the worker's full reasoning.
+7. Review the result against `done_when`, scope, contradictions, regressions, and evidence freshness.
+8. Allow at most one focused correction with the original scope and owner. Re-review the corrected result.
+9. Return `PASS`, `FIX`, or `BLOCKED`; Sol alone decides the overall result.
 
 ## Handshake gates
 
@@ -97,6 +99,11 @@ logical route to a host schema; never assume that a lane name is a registered
 agent type. `NATIVE_GENERIC`, `CUSTOM_ROLE`, and `HOST_MANAGED` are separate
 adapters with separate evidence rules.
 
+`LUNA_MAX` capability is mandatory. If its preflight returns `UNAVAILABLE` or
+`UNKNOWN`, stop at the handshake gate and return `HOST_ENABLEMENT_REQUIRED`;
+do not treat generic `BLOCKED` as a completed deployment, and do not substitute
+another model.
+
 For `NATIVE_GENERIC`, `fork_context: false` means fresh context and excluded
 controller history in the current generic spawn schema. A returned `agent_id`
 is only an `AGENT_HANDLE` unless the host explicitly labels it a task-bound
@@ -115,6 +122,10 @@ silently downgrade. If `LUNA_MAX` is unavailable, select `SOL_XHIGH` only when
 the task-fit or repeated-failure escalation gate independently calls for it;
 otherwise preserve the plan and return `BLOCKED`. Do not retry an unavailable
 packet identically.
+
+When the plan marks Luna enablement `REQUIRED`, the fallback field must remain
+`BLOCKED` until the host proves enablement. Host enablement is a prerequisite,
+not a compatibility fallback.
 
 ## Compatibility fallback
 

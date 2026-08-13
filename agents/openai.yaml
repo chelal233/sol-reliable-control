@@ -1,7 +1,7 @@
 interface:
   display_name: "Reliable Sol Control"
   short_description: "Clean Sol review with isolated execution"
-  default_prompt: "Use $sol-reliable-control to plan, delegate, and audit this task without polluting the controller context."
+  default_prompt: "Use $sol-reliable-control to plan, require verified LUNA_MAX host enablement, delegate, and audit this task without polluting the controller context."
 
 policy:
   allow_implicit_invocation: false

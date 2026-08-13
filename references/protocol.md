@@ -13,6 +13,7 @@ Route: DIRECT | SOL_ONLY | LUNA_MAX | SOL_XHIGH | FALLBACK
 Execution context: FRESH | CURRENT
 Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
 Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED
+Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
 Capability preflight: REQUIRED
 Task risk: LOW | HIGH
 Identity gate: HOST_DISPATCH | HOST_VERIFIED
@@ -33,6 +34,12 @@ Sol must select an adapter only after capability preflight. The route binding
 is fixed: `LUNA_MAX` requests `gpt-5.6-luna / max`, and `SOL_XHIGH` requests
 `gpt-5.6-sol / xhigh`. A surface may reject that request; it may not silently
 rewrite it.
+
+`Luna enablement: REQUIRED` is the default deployment requirement. It means
+the host must expose the normal Luna capability even when a particular packet
+is independently routed to `SOL_XHIGH`; it does not force every task to use
+Luna. Use [references/enablement.md](enablement.md) for the host request and
+evidence contract.
 
 ## Controller states
 
@@ -55,6 +62,8 @@ Route: <requested route>
 Surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | UNKNOWN
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
+Luna enablement: VERIFIED | NOT_ENABLED | UNKNOWN
+Enablement evidence: <host allowlist/schema or launch capability reference>
 Host requested model: <host fact or UNKNOWN>
 Host observed model: <host fact or UNKNOWN>
 Worker self-report model: <advisory claim or UNKNOWN>
@@ -79,6 +88,20 @@ For `Identity gate: HOST_DISPATCH`, a valid `HOST_RECEIPT` with no explicit host
 
 The complete adapter contract and normalized field mapping are in
 [references/runtime-adapters.md](runtime-adapters.md).
+
+## Mandatory Luna enablement gate
+
+Before a normal dispatch, a plan with `Luna enablement: REQUIRED` must receive
+`Luna enablement: VERIFIED` for `gpt-5.6-luna / max`. If the host advertises no
+Luna pair, set `Luna enablement: NOT_ENABLED`, return
+`HOST_ENABLEMENT_REQUIRED` with failure class `runtime` / `model_identity`,
+and do not create a worker. The host must provide new capability evidence
+before preflight is repeated.
+
+`SOL_XHIGH` remains a normal replan selected by task fit or the escalation
+gate; it is not a mechanism for hiding a missing mandatory Luna capability.
+When Luna enablement is required, `Fallback: BLOCKED` remains in force and a
+new user-owned task must not be created as an enablement workaround.
 
 ## Native worker launch
 
@@ -170,6 +193,11 @@ Blocker: <None or concrete reason>
 ## Fallback and failure rules
 
 When the requested lane cannot start, preserve the original plan and owner. Do not silently replace it. If the plan explicitly permits `FALLBACK`, select one compatible lane, record `Identity: UNVERIFIED`, and continue only when the risk and scope rules allow it. Otherwise return `BLOCKED` with the failure class and the missing host fact.
+
+If the plan has `Luna enablement: REQUIRED` and the host does not expose the
+required pair, return `HOST_ENABLEMENT_REQUIRED` and keep `Fallback: BLOCKED`.
+This is a host configuration blocker that requires an enablement response; it
+is not permission to switch identity or model.
 
 If a surface does not expose `gpt-5.6-luna`, do not automatically turn the
 request into `SOL_XHIGH`: replan to `SOL_XHIGH` only when its normal task-fit or

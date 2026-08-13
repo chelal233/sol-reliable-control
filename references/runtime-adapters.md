@@ -13,6 +13,7 @@ Every dispatch is evaluated with this normalized input:
 Task ID: <stable id>
 Route: LUNA_MAX | SOL_XHIGH
 Requested model/effort: <route binding>
+Luna enablement: REQUIRED
 Execution context: FRESH
 Controller history: EXCLUDED
 Identity gate: HOST_DISPATCH | HOST_VERIFIED
@@ -34,6 +35,10 @@ Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD
 `AVAILABLE` means the host says the request can be submitted. It does not
 prove that the worker actually ran with the requested identity. Runtime
 identity is gated separately by the receipt and identity-proof fields.
+
+When `Luna enablement: REQUIRED` and the requested Luna pair is absent, the
+adapter returns `NOT_ENABLED` / `HOST_ENABLEMENT_REQUIRED` before dispatch.
+That state is not a compatibility fallback and must not create a worker.
 
 ## Logical route bindings
 

@@ -20,6 +20,7 @@
 - `SKILL.md`：主控角色、路由、状态机、握手和审核规则。
 - `references/protocol.md`：计划、握手、结果和 fallback packet schema。
 - `references/runtime-adapters.md`：Native generic、custom role、host-managed 三类运行面及 capability preflight / receipt / identity 证据契约。
+- `references/enablement.md`：LUNA_MAX 必须由宿主启用的请求、响应和验收门禁。
 - `tests/protocol-contract.ps1`：不依赖宿主的协议契约回归检查。
 - `agents/openai.yaml`：Codex skill 列表的界面元数据。
 
