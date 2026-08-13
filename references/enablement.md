@@ -32,6 +32,16 @@ Fallback: BLOCKED
 Sol may request enablement and verify it. Sol must not claim enablement from a
 worker self-report, a local role file, or a successful source/runtime sync.
 
+Normal dispatch follows **Native-first -> MCP-second**. First use a native
+subagent surface visible in the current controller thread when its declared
+schema, exact Luna/max pair, fresh/history semantics, and host evidence pass
+preflight. `multi_agent_v1__spawn_agent` is canonical; a future equivalent must
+be explicitly declared native and independently verifiable. Use the
+`HOST_MANAGED` `sol_luna_broker` only when the native surface is not visible,
+its schema/model mismatches the request, or native preflight cannot obtain the
+required host evidence. If broker preflight also fails, return `BLOCKED` and do
+not change the model.
+
 ## Host enablement request
 
 Send this compact request to the host capability owner or host control plane:
@@ -60,6 +70,10 @@ schema, such as `fork_turns: none` when the surface explicitly declares that
 field. For
 `CUSTOM_ROLE` or `HOST_MANAGED`, the host must expose an authoritative role or
 launch mapping; a `.codex/agents/*.toml` file alone is not enablement.
+
+The older `collaboration.spawn_agent` schema is not the canonical native v1
+surface. It cannot borrow `multi_agent_v1__spawn_agent` fields, allowlists,
+receipts, or evidence, and must pass preflight under its own declared contract.
 
 ## Required host response
 
@@ -99,8 +113,9 @@ obtain Luna.
 If another thread on the same Desktop host exposes `multi_agent_v1__spawn_agent`
 with Luna/max while the current thread exposes only the Sol/Terra
 `collaboration.spawn_agent` schema, classify the current result as
-`THREAD_SURFACE_NOT_VISIBLE`. The recovery action is surface migration/rebind
-or a fresh controller thread, not model substitution.
+`THREAD_SURFACE_NOT_VISIBLE` and preflight the current thread's priority-2 MCP.
+If MCP is also unavailable, the recovery action is surface migration/rebind or
+a fresh controller thread, not model substitution.
 
 ## Configuration boundary
 
@@ -126,7 +141,9 @@ capability registry or an explicitly supported custom/managed surface. No
 local Sol config key is evidence of that host-side enablement.
 
 The installed Sol Luna MCP broker is an explicit managed transport for hosts
-where the native surface is not visible. By default it fixes
+where the native surface is not visible, is schema/model-incompatible, or
+cannot produce the required host evidence. It is the second route, not a
+silent model fallback or native subagent. By default it fixes
 `gpt-5.6-luna / max`, creates a fresh ephemeral app-server thread, and returns
 a task-bound `HOST_LAUNCH_RECORD`. The CLI route remains available only when
 `SOL_LUNA_TRANSPORT=cli`; it returns `BROKER_RUN_RECEIPT` and remains
@@ -138,6 +155,10 @@ its task-bound thread id, `model`, and `reasoningEffort`. Record
 `HOST_LAUNCH_RECORDED` when those fields exactly equal Luna/max. This is a
 separate retest state: inspect the same turn for `model/rerouted` or another
 host conflict before promoting it to `HOST_VERIFIED`.
+
+Never promote MCP transport success or worker self-report to `HOST_VERIFIED`.
+The host-managed route must satisfy its own independent identity proof, and
+overall `HOST_VERIFIED` still requires `execution_status=COMPLETED`.
 
 When the implementation turn may outlive the caller's MCP deadline, use the
 broker's explicit asynchronous mode after this handshake: submit

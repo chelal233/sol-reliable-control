@@ -13,11 +13,12 @@
 - `sol-xhigh` 的 `xhigh` 不可用时不静默降级，按 `runtime`/`model_identity` 失败处理。
 - 同一问题在 `luna-max` 下超过 2 次持续审核失败，或业务不清晰反复引发回归时，停止重试并提交 `sol-xhigh` 处理。
 - 握手失败保持 `BLOCKED`，不会让 Sol 直接接管实现，也不会把失败伪装成 worker 结果。
-- 原生 Luna 调度优先使用当前线程可见的 `multi_agent_v1__spawn_agent`（`fork_context=false`、`gpt-5.6-luna`、`max`）；`collaboration.spawn_agent` 是独立的旧/兼容 schema，不能混用字段或把它的 Sol/Terra 枚举当成全局能力结论。
-- 原生 surface 不可见时，正式使用 `scripts/sol-luna-broker.ps1` 提供的 `HOST_MANAGED` MCP 主启动链路；它固定启动 fresh ephemeral `gpt-5.6-luna / max`，但 `BROKER_RUN_RECEIPT` 和 worker 自报仍不能替代 `HOST_RECEIPT` / `HOST_VERIFIED`。
+- `LUNA_MAX` 正常调度采用“原生优先、MCP 次选”（native-first -> MCP-second）：第一优先使用当前线程可见且契约匹配的 `multi_agent_v1__spawn_agent`，或未来等价、由宿主声明且可验证的 native surface。
+- 只有 native surface 不可见、schema/`gpt-5.6-luna / max` 不匹配，或 native preflight 不能取得所需宿主证据时，才使用 `scripts/sol-luna-broker.ps1` 提供的 `HOST_MANAGED` MCP。MCP 不是 native subagent，也不是静默 model fallback；两条路线都不可用时保持原模型并按现有规则返回 `BLOCKED`。
+- `collaboration.spawn_agent` 是独立的旧/兼容 schema，不能冒充 canonical `multi_agent_v1__spawn_agent`、混用字段、借用其 capability/receipt，或把自身的 Sol/Terra 枚举当成全局能力结论。
 - broker 默认使用 app-server 的 fresh `thread/start`；若返回精确 `model=gpt-5.6-luna`、`reasoningEffort=max`，先记录为 `HOST_LAUNCH_RECORDED`，同一 turn 无 `model/rerouted` 时身份可升级为 `VERIFIED`。`SOL_LUNA_TRANSPORT=cli` 仅保留为旧版诊断路线。
 - broker 将身份与执行分开报告：匹配的 launch record 且无 reroute 时 `identity=VERIFIED`，即使执行因 Windows sandbox ACL 或进程创建拒绝而 `BLOCKED`；只有 `identity=VERIFIED` 且 `execution_status=COMPLETED` 才返回整体 `HOST_VERIFIED`。MCP payload 会给出脱敏后的 `execution_blocker_code` 与 `execution_blocker`，其中明确区分 `WINDOWS_SANDBOX_ACL_FAILED` 和 `PROCESS_CREATION_DENIED`。
-- capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到 Luna 而当前线程看不到时，返回 `THREAD_SURFACE_NOT_VISIBLE`，要求 surface migration/rebind 或 fresh controller thread。
+- capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到 Luna 而当前线程看不到时，记录 `THREAD_SURFACE_NOT_VISIBLE` 并检查当前线程的第二优先 MCP，只有 MCP 也不可用时才要求 surface migration/rebind 或 fresh controller thread。
 - `FALLBACK` 是显式恢复分支：允许任意安全兼容 lane，但必须标记 `UNVERIFIED`，且只用于低风险、窄范围、可独立验证的任务。
 - 只传结构化 packet、验证摘要和 evidence 路径，不导入 worker 全量推理，避免污染主控上下文。
 - 不包含仓库操作、部署流程、项目记忆或其他 skill 的生命周期；本包可单独安装，不要求额外 skill 才能理解自身协议。

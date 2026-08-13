@@ -52,32 +52,35 @@ These are the only normal Sol lanes. `SOL_XHIGH` is a normal replan when task
 fit or the escalation gate selects it; it is not an implicit compatibility
 fallback.
 
-## Surface discovery and thread binding
+## Surface discovery, priority, and thread binding
 
 Capability is scoped to the controller thread and host that will perform the
 dispatch. A capability list captured in another thread, a UI picker, a role
-file, or a worker's self-report cannot authorize this dispatch. Enumerate the
-current callable surfaces in this order:
+file, or a worker's self-report cannot authorize this dispatch. For normal
+`LUNA_MAX`, apply this two-level ladder:
 
-1. `multi_agent_v1__spawn_agent` with a model/effort matrix that contains
-   `gpt-5.6-luna / max`.
-2. A `CUSTOM_ROLE` or `HOST_MANAGED` surface with an authoritative role/launch
-   record for `luna-max-worker`.
-3. The installed `sol_luna_broker` MCP surface as an explicit managed
-   transport; its default app-server route returns a host launch record and
-   can reach `identity=VERIFIED` after the no-reroute check, then
-   `HOST_VERIFIED` when execution also completes. Its legacy CLI route remains
-   `STARTED_UNVERIFIED` without host identity telemetry.
-4. `collaboration.spawn_agent` only when its declared schema and model matrix
-   contain the required Luna pair.
+1. **Priority 1: current-thread native.** Use
+   `multi_agent_v1__spawn_agent` when its model/effort matrix contains
+   `gpt-5.6-luna / max` and its preflight supplies the required host evidence.
+   A future equivalent is eligible only when the host explicitly declares a
+   native contract whose schema and evidence are verifiable.
+2. **Priority 2: HOST_MANAGED MCP.** Use `sol_luna_broker` only when priority 1
+   is not visible, its declared schema/model cannot express Luna/max, or its
+   preflight cannot supply the required host evidence. Record the exact native
+   failure condition before broker preflight.
+
+A separately registered `CUSTOM_ROLE` remains an explicit specialized route;
+it does not reorder this normal-dispatch ladder. If both ladder candidates fail
+their own preflight, preserve the requested model and return `BLOCKED`.
 
 If a thread exposes only `collaboration.spawn_agent` with
 `gpt-5.6-sol`/`gpt-5.6-terra`, that candidate is unavailable, but the result
 must not be promoted to a global host verdict until all visible candidates have
 been checked. If `multi_agent_v1__spawn_agent` is visible on a sibling thread
 but not this controller, use `THREAD_SURFACE_NOT_VISIBLE` and request a host
-surface migration/rebind or a fresh controller thread. Never transplant a
-sibling's `agent_id`, receipt, or self-report.
+surface migration/rebind or a fresh controller thread only if priority-2 MCP is
+also unavailable. Never transplant a sibling's `agent_id`, receipt, or
+self-report.
 
 ## Adapter: NATIVE_GENERIC
 
@@ -112,7 +115,10 @@ collaboration.spawn_agent({
 ```
 
 Use this form only when the current schema declares these fields and advertises
-the exact Luna/max pair. The two schemas are not interchangeable.
+the exact Luna/max pair. The two schemas are not interchangeable. The older
+`collaboration.spawn_agent` schema cannot impersonate `multi_agent_v1__spawn_agent`,
+borrow its capability evidence, or be called with native-v1 fields; it must
+qualify independently under its own host declaration and evidence contract.
 
 Preflight must confirm that the host's advertised model/effort matrix contains
 the required pair. A host rejection such as `Unknown model` is an explicit
@@ -163,9 +169,11 @@ create a new user-owned Codex task merely to obtain a model.
 
 ### MCP broker variant
 
-The Sol Luna broker is a local STDIO MCP server that provides an explicit
-`HOST_MANAGED` transport when the current controller thread cannot see a native
-worker tool. Its stable tool schema is:
+The Sol Luna broker is a local STDIO MCP server that provides the priority-2
+`HOST_MANAGED` transport only when the current controller thread cannot see a
+native worker tool, the visible native schema/model mismatches Luna/max, or the
+native preflight cannot produce the required host evidence. Its stable tool
+schema is:
 
 ```text
 sol_luna_exec({
@@ -207,6 +215,10 @@ absence of a `model/rerouted` event for that turn. A launch record that says
 Luna/max but is followed by a host reroute or another host-effective identity
 fact is `HOST_MODEL_MISMATCH`, not verified. A worker's generic self-report is
 advisory and does not override the host launch record.
+
+The broker does not become a native surface and does not change the requested
+model. Transport success, a broker receipt, or worker self-report alone is not
+`HOST_VERIFIED`; apply the host-managed evidence and execution gates below.
 
 Long-running implementation packets use the broker's asynchronous variant:
 `sol_luna_exec(execution_mode=async)` returns a task-bound `HOST_JOB_RECEIPT`

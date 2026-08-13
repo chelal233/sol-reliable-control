@@ -33,6 +33,18 @@ Choose the cheapest route that satisfies the task:
 
 Normal execution has only the `luna-max` and `sol-xhigh` lanes. Do not select a lane by name, price, or prestige; use task fit and acceptance evidence.
 
+For every normal `LUNA_MAX` dispatch, use this Native-first dispatch ladder:
+
+1. Use a current-thread native subagent surface whose declared schema, exact
+   Luna/max pair, fresh-context semantics, and host evidence satisfy the plan.
+   `multi_agent_v1__spawn_agent` is canonical; a future equivalent qualifies
+   only when the host declares it native and its contract can be verified.
+2. Use the `HOST_MANAGED` `sol_luna_broker` MCP only when no qualifying native
+   surface is visible, the visible native schema/model does not match, or native
+   preflight cannot obtain the required host evidence.
+3. If neither route passes its own preflight, preserve `LUNA_MAX` and return
+   `BLOCKED` under the existing fail-closed rules. Do not switch models.
+
 ## Controller state
 
 Use this compact state machine:
@@ -86,9 +98,10 @@ turn has no `model/rerouted` event or conflicting effective identity.
 
 ## Native worker launch
 
-Prefer the host's native generic worker surface and a fresh context, but run
-the capability preflight in [references/runtime-adapters.md](references/runtime-adapters.md)
-before dispatch:
+Start every normal `LUNA_MAX` dispatch at priority 1 of the Native-first
+dispatch ladder: a current-thread native generic worker surface and a fresh
+context. Run the capability preflight in
+[references/runtime-adapters.md](references/runtime-adapters.md) before dispatch:
 
 ```text
 agent role: generic worker
@@ -104,6 +117,15 @@ logical route to a host schema; never assume that a lane name is a registered
 agent type. `NATIVE_GENERIC`, `CUSTOM_ROLE`, and `HOST_MANAGED` are separate
 adapters with separate evidence rules.
 
+The canonical native v1 contract is `multi_agent_v1__spawn_agent`. A future
+native surface may take priority 1 only when it is visible in the current
+thread, explicitly declared as native, schema-compatible with the normalized
+request, and able to return the required host evidence. The older
+`collaboration.spawn_agent` schema cannot impersonate the canonical v1 surface,
+borrow its model matrix, or reuse its receipts. It is independently eligible
+only if its own declared schema, Luna/max support, and evidence contract pass
+preflight.
+
 Capability discovery is bound to the current controller thread and host. Before
 returning `HOST_ENABLEMENT_REQUIRED`, enumerate all callable worker surfaces in
 that same thread. Prefer `multi_agent_v1__spawn_agent` when it is exposed; its
@@ -114,8 +136,9 @@ An absent surface on one thread is `THREAD_SURFACE_NOT_VISIBLE`, not proof that
 Luna is globally unavailable. Do not copy a model list, agent id, or receipt
 from another thread.
 
-`LUNA_MAX` capability is mandatory. If its preflight returns `UNAVAILABLE` or
-`UNKNOWN`, stop at the handshake gate and return `HOST_ENABLEMENT_REQUIRED`;
+`LUNA_MAX` capability is mandatory. If neither priority route can return an
+`AVAILABLE` preflight, stop at the handshake gate and return
+`HOST_ENABLEMENT_REQUIRED`;
 do not treat generic `BLOCKED` as a completed deployment, and do not substitute
 another model. The skill and `config.toml` can state this requirement but cannot
 register a model in the host-owned `collaboration.spawn_agent` surface; see
@@ -149,10 +172,13 @@ user-owned task to obtain a model.
 
 ### MCP Luna broker
 
-When the native worker surface is not injected into the current Desktop thread,
-the installed `sol_luna_broker` MCP server is the explicit `HOST_MANAGED`
-transport adapter. It is not a silent compatibility fallback and it is not a
-native subagent. The broker must:
+At priority 2, use the installed `sol_luna_broker` MCP server as the explicit
+`HOST_MANAGED` transport adapter only when the native surface is not visible in
+the current Desktop thread, its schema/model cannot express the requested
+Luna/max contract, or native preflight cannot obtain the required host evidence.
+This changes the transport surface, not the requested model. It is not a silent
+model fallback. MCP is not a native subagent, and MCP evidence must never be
+labeled native. The broker must:
 
 - launch a fresh ephemeral app-server thread with `gpt-5.6-luna` and `max`;
 - capture the task-bound `thread/start` model/effort record and reject any
@@ -201,9 +227,11 @@ sol_luna_exec({
 })
 ```
 
-Use the broker as the operational Luna path when the native surface is absent;
-keep the high-risk identity gate closed until the host supplies independent
-identity evidence. The broker implementation and contract test live under
+Use the broker only after recording the native candidate and one of the three
+priority-2 trigger conditions above. Keep the high-risk identity gate closed
+until the host supplies independent identity evidence; a worker self-report
+never creates `HOST_VERIFIED`. If broker preflight also fails, return `BLOCKED`
+without changing the model. The broker implementation and contract test live under
 `scripts/sol-luna-broker.ps1` and `tests/broker-contract.ps1` in the installed
 skill.
 

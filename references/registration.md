@@ -38,12 +38,16 @@ Candidate tools: <all visible worker tool names>
 ```
 
 If `multi_agent_v1__spawn_agent` is visible and contains `gpt-5.6-luna / max`,
-use the native call in Step 2A. If only a custom/managed role is visible, use
-Step 3. If only `collaboration.spawn_agent` is visible and its pair is absent,
-continue to Step 2B. If a sibling thread can see the native Luna surface but
-this thread cannot, return `THREAD_SURFACE_NOT_VISIBLE` and request a fresh
-controller thread or host surface migration/rebind; do not call the sibling's
-agent id from this thread.
+use the native call in Step 2A. A future native equivalent is eligible only
+when the current thread exposes an explicit, verifiable native contract. If
+only `collaboration.spawn_agent` is visible, inspect it independently in Step
+2B; the older schema must not masquerade as canonical native v1. If its schema
+or Luna/max matrix does not match, or native preflight cannot obtain the
+required host evidence, record that failure and proceed to the priority-2 MCP
+path in Step 2C. If a sibling thread can see the native Luna surface but this
+thread cannot, record `THREAD_SURFACE_NOT_VISIBLE`; surface migration/rebind is
+required only if the explicit current-thread priority-2 `HOST_MANAGED` broker
+is also unavailable. Never call the sibling's agent id from this thread.
 
 ## Step 2A: use the canonical native wrapper
 
@@ -99,6 +103,11 @@ declares both. `fork_turns = "none"` and `fork_context = false` are adapter
 spellings of the same normalized requirement: fresh context with controller
 history excluded.
 
+This legacy schema cannot impersonate `multi_agent_v1__spawn_agent`, inherit
+its allowlist, or turn an `agent_id` into native-v1 evidence. It qualifies only
+when its own host declaration, exact Luna/max support, receipt, and identity
+evidence satisfy preflight.
+
 For a host that exposes the `multi_agent_v1__spawn_agent` wrapper, the declared
 native variant may be:
 
@@ -130,9 +139,11 @@ visibility is thread-bound and must be recorded in the capability snapshot.
 
 ## Step 2C: register the Sol Luna MCP broker
 
-Use this explicit `HOST_MANAGED` adapter when the current Desktop thread does
-not expose a native worker surface. Install the skill first, then add the
-server to the host's `config.toml`:
+Use this explicit priority-2 `HOST_MANAGED` adapter only when the current
+Desktop thread does not expose a qualifying native worker surface, the native
+schema/model mismatches Luna/max, or native preflight cannot obtain the required
+host evidence. Install the skill first, then add the server to the host's
+`config.toml`:
 
 ```toml
 [mcp_servers.sol_luna_broker]
@@ -187,7 +198,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File `
 ```
 
 This route is an operational Luna path, not a new user-owned Codex task and not
-permission to silently replace the native surface's identity evidence.
+permission to silently replace the native surface's identity evidence. Do not register the broker as a native surface: it remains `HOST_MANAGED`, does
+not change the requested model, and cannot turn worker self-report into
+`HOST_VERIFIED`.
 
 For a bounded implementation packet that may exceed the caller's MCP deadline,
 keep the identity handshake synchronous, then set `execution_mode="async"` on
@@ -261,8 +274,9 @@ following sequence:
 1. Restart or reload the process that owns the worker tool registry.
 2. Re-enumerate all worker tools in the current controller thread; a full
    Desktop restart alone does not prove that the existing thread was rebound.
-3. If the canonical wrapper is still absent, start a fresh controller thread
-   on the host that exposes it or request explicit surface migration/rebind.
+3. If the canonical wrapper is still absent, record the native failure and use
+   the priority-2 broker when it passes preflight; otherwise start a fresh
+   controller thread or request explicit surface migration/rebind.
 4. Read the selected surface metadata again and record the model/effort list.
 5. Do not dispatch until `gpt-5.6-luna / max` is present on that surface.
 6. Send the identity-only handshake and require the receipt/identity evidence

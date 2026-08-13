@@ -51,6 +51,9 @@ Assert-Contains $skill '`LUNA_MAX` capability is mandatory' 'Luna must be a requ
 Assert-Contains $skill 'HOST_ENABLEMENT_REQUIRED' 'missing Luna capability must request host enablement'
 Assert-Contains $skill 'multi_agent_v1__spawn_agent' 'canonical native Luna surface must be documented'
 Assert-Contains $skill 'THREAD_SURFACE_NOT_VISIBLE' 'thread-bound surface gaps must be classified'
+Assert-Contains $skill 'Native-first dispatch ladder' 'Luna dispatch must define an operational priority ladder'
+Assert-Contains $skill 'native preflight cannot obtain the required host evidence' 'managed MCP must require a concrete native-preflight failure'
+Assert-Contains $skill 'MCP is not a native subagent' 'managed MCP must not be represented as native execution'
 
 Assert-Contains $protocol 'Surface:' 'plan packet must identify the execution surface'
 Assert-Contains $protocol 'Capability verdict:' 'handshake must carry capability evidence'
@@ -68,6 +71,9 @@ Assert-Contains $protocol 'Dispatch tool/schema:' 'plan and handshake must bind 
 Assert-Contains $protocol 'THREAD_SURFACE_NOT_VISIBLE' 'protocol must distinguish thread surface visibility'
 Assert-Contains $protocol 'HOST_JOB_RECEIPT' 'protocol must define asynchronous broker submission evidence'
 Assert-Contains $protocol 'sol_luna_poll' 'protocol must define asynchronous broker result retrieval'
+Assert-Contains $protocol 'Dispatch priority: NATIVE_FIRST_THEN_MCP' 'plan must bind Luna to native-first then MCP-second routing'
+Assert-Contains $protocol 'MCP is not native evidence' 'protocol must keep managed transport evidence distinct from native evidence'
+Assert-Contains $protocol 'No silent model fallback' 'route failure must never silently replace the requested model'
 
 Assert-Contains $adapters 'multi_agent_v1__spawn_agent' 'native adapter must name the generic worker surface'
 Assert-Contains $adapters 'fork_context: false' 'native adapter must exclude controller history'
@@ -85,6 +91,9 @@ Assert-Contains $adapters 'model/rerouted' 'app-server reroutes must invalidate 
 Assert-Contains $adapters 'HOST_JOB_RECEIPT' 'managed broker must define asynchronous submission evidence'
 Assert-Contains $adapters 'sol_luna_poll' 'managed broker must define asynchronous result retrieval'
 Assert-Contains $protocol 'HOST_LAUNCH_RECORDED' 'protocol must distinguish host launch from effective verification'
+Assert-Contains $adapters 'Priority 1: current-thread native' 'adapter order must make current-thread native primary'
+Assert-Contains $adapters 'Priority 2: HOST_MANAGED MCP' 'adapter order must make the broker secondary'
+Assert-Contains $adapters 'cannot impersonate `multi_agent_v1__spawn_agent`' 'legacy collaboration schema must not masquerade as canonical native v1'
 
 Assert-Contains $enablement 'LUNA_MAX_REQUIRED' 'enablement packet must identify the required capability'
 Assert-Contains $enablement 'gpt-5.6-luna / max' 'enablement packet must bind the Luna model and effort'
@@ -97,6 +106,7 @@ Assert-Contains $enablement 'does not add a model' 'config.toml must not be trea
 Assert-Contains $enablement 'collaboration.spawn_agent' 'host-owned surface must be named explicitly'
 Assert-Contains $enablement 'execution_mode="async"' 'enablement guide must define asynchronous implementation submission'
 Assert-Contains $enablement 'sol_luna_poll' 'enablement guide must define asynchronous result retrieval'
+Assert-Contains $enablement 'Native-first -> MCP-second' 'enablement must preserve the route priority ladder'
 Assert-Contains $protocol 'configuration boundary' 'protocol must explain config versus host ownership'
 Assert-Contains $protocol 'registration guide' 'protocol must link the registration procedure'
 
@@ -124,11 +134,13 @@ Assert-Contains $registration 'broker-contract.ps1' 'registration guide must exp
 Assert-Contains $registration 'HOST_JOB_RECEIPT' 'registration guide must define asynchronous submission evidence'
 Assert-Contains $registration 'sol_luna_poll' 'registration guide must define result polling'
 Assert-Contains $registration 'execution_mode="async"' 'registration guide must define asynchronous execution'
+Assert-Contains $registration 'Do not register the broker as a native surface' 'registration must keep MCP and native surfaces distinct'
 
 Assert-Contains $readme 'README.en.md' 'README must expose the English companion'
 Assert-Contains $readme 'sol-advisor' 'README must record the Sol advisor reference project'
 Assert-Contains $readme 'codex-sol-control' 'README must record the Codex Sol control reference project'
 Assert-Contains $readme 'MCP' 'README must describe the managed broker surface'
+Assert-Contains $readme '原生优先、MCP 次选' 'README must state the native-first route in its existing Chinese style'
 
 Assert-Contains $enablement 'BROKER_RUN_RECEIPT' 'enablement guide must classify broker receipts'
 Assert-Contains $enablement 'STARTED_UNVERIFIED' 'enablement guide must keep broker identity unverified'
