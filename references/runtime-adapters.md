@@ -249,10 +249,13 @@ host observed model/effort: UNKNOWN unless the host supplies telemetry
 
 The default app-server broker fixes `gpt-5.6-luna / max` and starts a fresh
 ephemeral thread. Its `thread/start` response is a task-bound
-`HOST_LAUNCH_RECORD` containing host model/effort. When that record matches and
-the same turn has no `model/rerouted` event, identity may be `VERIFIED` with
-proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`; overall `HOST_VERIFIED` also
-requires completed execution. Set
+`HOST_LAUNCH_RECORD` containing host model/effort. With
+`handshake_only=true`, the broker returns after `thread/start` and does not
+send `turn/start`; this is launch evidence with `execution_status=NOT_STARTED`,
+not a completed worker turn. A later matching turn with no `model/rerouted`
+event may yield `identity=VERIFIED` with proof kind
+`ROLE_MAPPING_AND_LAUNCH_RECORD`; overall `HOST_VERIFIED` also requires
+completed execution. Set
 `SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; that route returns a
 `BROKER_RUN_RECEIPT`, has no host telemetry, and remains
 `STARTED_UNVERIFIED`. Neither route permits silent model substitution.
@@ -260,11 +263,12 @@ requires completed execution. Set
 The app-server `thread/start` response is a distinct host-managed launch
 record. It may be accepted as `ROLE_MAPPING_AND_LAUNCH_RECORD` only when all
 of these fields are captured from the same fresh ephemeral launch: exact
-requested `model`, exact `reasoningEffort`, task-bound thread id, and the
-absence of a `model/rerouted` event for that turn. A launch record that says
-Luna/max but is followed by a host reroute or another host-effective identity
-fact is `HOST_MODEL_MISMATCH`, not verified. A worker's generic self-report is
-advisory and does not override the host launch record.
+requested `model`, exact `reasoningEffort`, and task-bound thread id. The
+identity-only handshake has no turn to inspect for reroute; a later turn is
+required for `HOST_VERIFIED`. A launch record that is followed by a host
+reroute or another host-effective identity fact is `HOST_MODEL_MISMATCH`, not
+verified. A worker's generic self-report is advisory and does not override the
+host launch record.
 
 The broker does not become a native surface and does not change the requested
 model. Transport success, a broker receipt, or worker self-report alone is not

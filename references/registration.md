@@ -246,20 +246,22 @@ sol_luna_exec({
 The first call must use `handshake_only=true` and `sandbox="read-only"`. The
 default broker pins `gpt-5.6-luna / max`, starts a fresh ephemeral app-server
 thread, and returns a `HOST_LAUNCH_RECORD` containing the runtime version/hash,
-task-bound thread id, and host model/effort. Record `HOST_LAUNCH_RECORDED`
-before the turn check; if the same turn has no `model/rerouted` event, the
-result can be `HOST_VERIFIED` with `ROLE_MAPPING_AND_LAUNCH_RECORD`. Worker
-self-report remains advisory. Set `SOL_LUNA_TRANSPORT=cli` only for legacy
-diagnostics; it returns a `BROKER_RUN_RECEIPT` and remains
-`STARTED_UNVERIFIED`.
+task-bound thread id, and host model/effort without sending `turn/start`. Record
+`HOST_LAUNCH_RECORDED`; the handshake result has `execution_status=NOT_STARTED`
+and is not `HOST_VERIFIED`. A later verification turn with no
+`model/rerouted` event is required before `ROLE_MAPPING_AND_LAUNCH_RECORD` can
+support `HOST_VERIFIED`. Worker self-report remains advisory. Set
+`SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; it returns a
+`BROKER_RUN_RECEIPT` and remains `STARTED_UNVERIFIED`.
 
 For a host-managed app-server retest, capture the fresh ephemeral
 `thread/start` response instead of relying on the worker's self-report. The
 response is usable as `HOST_LAUNCH_RECORDED` only when its task-bound thread id
-reports exact `gpt-5.6-luna` and `max`. Continue the same turn and reject the
-record if a `model/rerouted` notification appears. A launch assignment is not
-the same as effective turn identity; keep the high-risk gate closed until this
-check completes.
+reports exact `gpt-5.6-luna` and `max`. The identity-only handshake intentionally
+does not run a turn; use a later verification/implementation turn and reject
+the record if a `model/rerouted` notification appears. A launch assignment is
+not the same as effective turn identity; keep the high-risk gate closed until
+that check completes.
 
 The broker contract can be checked without launching a worker:
 

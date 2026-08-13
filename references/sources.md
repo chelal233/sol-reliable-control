@@ -251,9 +251,13 @@ be running, or polling returns `PENDING`.
 **Risk:** launching a duplicate implementation packet and producing conflicting
 edits or receipts.
 
-**Solution:** use `execution_mode="async"` after the handshake, retain the
-task-bound `job_id`, poll the same job, and treat `PENDING`/caller timeout as
-unknown—not as permission to resubmit.
+**Solution:** make the synchronous `handshake_only=true` call stop at the
+task-bound `thread/start` launch record instead of waiting for `turn/start`;
+return `HOST_LAUNCH_RECORD` with `execution_status=NOT_STARTED` within the
+broker deadline. Then use `execution_mode="async"` for implementation, retain
+the task-bound `job_id`, poll the same job, and treat `PENDING`/caller timeout
+as unknown—not as permission to resubmit. A launch record still needs a later
+turn with no reroute before `HOST_VERIFIED`.
 
 #### F. Model reroute or effort mismatch
 

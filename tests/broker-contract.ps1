@@ -55,6 +55,8 @@ Assert-Contains $scriptText 'CreateProcessAsUserW\s+failed' 'broker must recogni
 Assert-Contains $scriptText 'command could not execute' 'broker must recognize denied command execution text'
 Assert-Contains $scriptText 'command blocked' 'broker must recognize blocked command execution text'
 Assert-Contains $scriptText 'HANDSHAKE_ACTIVITY_DETECTED' 'broker must reject activity during handshake-only probes'
+Assert-Contains $scriptText 'HANDSHAKE_ONLY_NO_TURN' 'identity-only handshake must not dispatch a worker turn'
+Assert-Contains $scriptText 'HOST_LAUNCH_RECORD_UNAVAILABLE' 'identity-only handshake must classify a missing launch record'
 Assert-Contains $scriptText 'OUTPUT_LIMIT_EXCEEDED' 'broker must cap worker output'
 Assert-Contains $scriptText 'EVENT_LIMIT_EXCEEDED' 'broker must cap app-server events'
 Assert-Contains $scriptText 'SOL_LUNA_MAX_ASYNC_JOBS' 'broker must bound asynchronous concurrency'
@@ -68,6 +70,9 @@ $appEnd = $scriptText.IndexOf('function ConvertFrom-CodexEvents', [StringCompari
 $appSection = $scriptText.Substring($appStart, $appEnd - $appStart)
 Assert-NotContains $appSection "'--ignore-user-config'" 'app-server must not receive CLI-only ignore-user-config flags'
 Assert-NotContains $appSection "'--ignore-rules'" 'app-server must not receive CLI-only ignore-rules flags'
+$launchHandshakeIndex = $appSection.IndexOf('# An identity-only handshake must finish at thread/start', [StringComparison]::Ordinal)
+$turnStartIndex = $appSection.IndexOf("method = 'turn/start'", [StringComparison]::Ordinal)
+Assert-True ($launchHandshakeIndex -ge 0 -and $turnStartIndex -gt $launchHandshakeIndex) 'handshake-only launch capture must precede turn/start'
 
 $requests = @(
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}',

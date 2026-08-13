@@ -190,11 +190,13 @@ a task-bound `HOST_LAUNCH_RECORD`. The CLI route remains available only when
 `STARTED_UNVERIFIED` because it has no host identity telemetry.
 
 The app-server surface can supply the missing launch record without creating a
-user-owned task. Capture the fresh ephemeral `thread/start` response, including
-its task-bound thread id, `model`, and `reasoningEffort`. Record
-`HOST_LAUNCH_RECORDED` when those fields exactly equal Luna/max. This is a
-separate retest state: inspect the same turn for `model/rerouted` or another
-host conflict before promoting it to `HOST_VERIFIED`.
+user-owned task. A synchronous `handshake_only=true` call captures the fresh
+ephemeral `thread/start` response, including its task-bound thread id, `model`,
+and `reasoningEffort`, then stops without dispatching `turn/start`. Record
+`HOST_LAUNCH_RECORDED` when those fields exactly equal Luna/max; the result is
+`execution_status=NOT_STARTED`, not `HOST_VERIFIED`. Use a later verification
+turn to inspect `model/rerouted` or another host conflict before promoting it
+to `HOST_VERIFIED`.
 
 Never promote MCP transport success or worker self-report to `HOST_VERIFIED`.
 The host-managed route must satisfy its own independent identity proof, and

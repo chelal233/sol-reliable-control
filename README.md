@@ -20,7 +20,7 @@
 - `USER_VISIBLE_TASK` 参考 `sol-advisor` 的做法，但它不是启用 Luna 的手段；它仍需独立的 host-observed identity evidence。
 - 该桌面任务路线不启动 Sol 本地 broker、不调用 `setupStart`、不执行 PowerShell、不修改任何 ACL；若宿主仍报告 `PROCESS_CREATION_DENIED` 或 sandbox 权限错误，只记录执行阻塞并停止，不申请扩大权限。
 - `collaboration.spawn_agent` 是独立的旧/兼容 schema，不能冒充 canonical `multi_agent_v1__spawn_agent`、混用字段、借用其 capability/receipt，或把自身的 Sol/Terra 枚举当成全局能力结论。
-- broker 默认使用 app-server 的 fresh `thread/start`；若返回精确 `model=gpt-5.6-luna`、`reasoningEffort=max`，先记录为 `HOST_LAUNCH_RECORDED`，同一 turn 无 `model/rerouted` 时身份可升级为 `VERIFIED`。`SOL_LUNA_TRANSPORT=cli` 仅保留为旧版诊断路线。
+- broker 默认使用 app-server 的 fresh `thread/start`；`handshake_only=true` 只等待这个 task-bound `HOST_LAUNCH_RECORD`，不发送 `turn/start`，因此不会被 worker 的 PowerShell/sandbox 故障拖到 300 秒外。若返回精确 `model=gpt-5.6-luna`、`reasoningEffort=max`，记录为 `HOST_LAUNCH_RECORDED`；它的 `execution_status=NOT_STARTED`，必须经过后续 turn 且无 `model/rerouted` 才能升级为 `HOST_VERIFIED`。`SOL_LUNA_TRANSPORT=cli` 仅保留为旧版诊断路线。
 - broker 将身份与执行分开报告：匹配的 launch record 且无 reroute 时 `identity=VERIFIED`，即使执行因 Windows sandbox ACL 或进程创建拒绝而 `BLOCKED`；只有 `identity=VERIFIED` 且 `execution_status=COMPLETED` 才返回整体 `HOST_VERIFIED`。MCP payload 会给出脱敏后的 `execution_blocker_code` 与 `execution_blocker`，其中明确区分 `WINDOWS_SANDBOX_ACL_FAILED` 和 `PROCESS_CREATION_DENIED`。
 - capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到 Luna 而当前线程看不到时，记录 `THREAD_SURFACE_NOT_VISIBLE`，先评估第二优先 Desktop task；Desktop 未获批准或不可用时再检查第三优先 MCP；两者都不可用时才要求 surface migration/rebind 或 fresh controller thread。
 - `FALLBACK` 是显式恢复分支：允许任意安全兼容 lane，但必须标记 `UNVERIFIED`，且只用于低风险、窄范围、可独立验证的任务。

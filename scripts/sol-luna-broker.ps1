@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:BrokerName = 'sol-luna-broker'
-$script:BrokerVersion = '1.1.0'
+$script:BrokerVersion = '1.2.0'
 $script:BrokerScriptPath = $PSCommandPath
 $script:FixedModel = 'gpt-5.6-luna'
 $script:FixedEffort = 'max'
@@ -641,6 +641,79 @@ function Invoke-AppServerWorker {
         $hostCwd.TrimEnd('\').Equals($Workdir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase) -and
         $hostSandbox -eq $Sandbox -and $hostApproval -eq 'never' -and
         $hostFallbackAllowed -eq $false
+
+    # An identity-only handshake must finish at thread/start. Do not send a
+    # turn/start for the read-only probe: a worker turn can block on a host
+    # sandbox/process-creation defect and hide the task-bound launch record
+    # until the outer broker deadline. A launch record is deliberately not a
+    # completed turn, so the caller must keep HOST_VERIFIED closed.
+    if ($HandshakeOnly) {
+        $rerouted = @($events | Where-Object { (Get-TextProperty $_ 'method') -eq 'model/rerouted' })
+        $timedOut = $watch.ElapsedMilliseconds -ge $timeoutMs
+        $stderr = $null
+        Stop-AppServerProcess $process
+        $stderr = $stderrTask.Result
+        $text = Get-AppServerMessageText -Events $events.ToArray()
+        $activityViolation = Get-AppServerActivityViolation -Events $events.ToArray()
+        $outputLimited = (-not (Test-TextLimit $text) -or -not (Test-TextLimit $stderr))
+        $executionStatus = if ($timedOut -or $null -eq $startResponse -or -not $launchRecord -or $activityViolation -or $outputLimited) { 'BLOCKED' } else { 'NOT_STARTED' }
+        $executionBlockerCode = if ($timedOut) {
+            'BROKER_TIMEOUT'
+        } elseif ($null -eq $startResponse) {
+            'HOST_LAUNCH_RECORD_UNAVAILABLE'
+        } elseif (-not $launchRecord) {
+            'HOST_LAUNCH_RECORD_MISMATCH'
+        } elseif ($outputLimited) {
+            'OUTPUT_LIMIT_EXCEEDED'
+        } elseif ($activityViolation) {
+            'HANDSHAKE_ACTIVITY_DETECTED'
+        } else {
+            'HANDSHAKE_ONLY_NO_TURN'
+        }
+        $executionBlocker = if ($timedOut) {
+            'Codex app-server did not return a task-bound launch record before the broker deadline'
+        } elseif ($null -eq $startResponse) {
+            'Codex app-server did not return a task-bound thread/start response'
+        } elseif (-not $launchRecord) {
+            'Codex app-server launch record did not match the requested model and effort'
+        } elseif ($outputLimited) {
+            'Codex app-server output exceeded the broker limit'
+        } elseif ($activityViolation) {
+            'Handshake-only worker emitted a command, file, tool, or shell activity event'
+        } else {
+            'Identity-only handshake captured the task-bound launch record; no turn was dispatched'
+        }
+        return [ordered]@{
+            exit_code = if ($executionStatus -eq 'BLOCKED') { 1 } else { 0 }
+            timed_out = $timedOut
+            events = $events.ToArray()
+            raw_lines = @()
+            thread_id = $threadId
+            host_model = $hostModel
+            host_effort = $hostEffort
+            host_launch_record = [bool]$launchRecord
+            host_fresh = $hostFresh
+            host_history_excluded = $hostHistoryExcluded
+            host_cwd = $hostCwd
+            host_sandbox = $hostSandbox
+            host_approval = $hostApproval
+            host_fallback_allowed = $hostFallbackAllowed
+            context_verified = [bool]$contextVerified
+            policy_verified = [bool]$policyVerified
+            rerouted = $rerouted
+            activity_violation = $activityViolation
+            output_limited = $outputLimited
+            read_failure_kind = $readFailureKind
+            turn_completed = $false
+            turn_status = $null
+            turn_error = $null
+            execution_status = $executionStatus
+            execution_blocker_code = $executionBlockerCode
+            execution_blocker = $executionBlocker
+            text = $text
+            stderr = $stderr
+        }
+    }
 
     $turnCompletedEvent = $null
     if ($threadId -and -not $process.HasExited -and $watch.ElapsedMilliseconds -lt $timeoutMs) {

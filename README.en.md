@@ -50,9 +50,12 @@ run PowerShell, or change ACLs. If the host still reports
 `PROCESS_CREATION_DENIED` or a sandbox permission error, record the execution
 blocker and stop; do not broaden permissions.
 
-The managed MCP broker starts a fresh ephemeral app-server thread, captures
-the host launch record, and rejects `model/rerouted` events. The legacy CLI
-transport is diagnostic only (`SOL_LUNA_TRANSPORT=cli`) and remains
+The managed MCP broker starts a fresh ephemeral app-server thread and captures
+the host launch record. With `handshake_only=true`, it returns immediately after
+`thread/start` without sending `turn/start`, so a worker PowerShell/sandbox
+fault cannot hide the record until the 300-second deadline. A later turn is
+still required to reject `model/rerouted` and reach `HOST_VERIFIED`. The legacy
+CLI transport is diagnostic only (`SOL_LUNA_TRANSPORT=cli`) and remains
 `STARTED_UNVERIFIED`.
 
 ## Three-layer verification

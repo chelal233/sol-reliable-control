@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Make the synchronous read-only app-server handshake return its task-bound
+  `HOST_LAUNCH_RECORD` at `thread/start` without waiting for a worker turn.
 - Add an explicit operator-attested Desktop evidence tier for hosts that omit
   effective model/effort telemetry; keep `HOST_VERIFIED` strict.
 - Make native -> explicitly approved Desktop -> MCP the documented Luna route.

@@ -331,8 +331,10 @@ sol_luna_exec({
 
 The default broker fixes `gpt-5.6-luna / max` and starts a fresh ephemeral
 app-server thread. Its `thread/start` response is a task-bound
-`HOST_LAUNCH_RECORD` containing host model/effort. When that record matches and
-the same turn has no `model/rerouted` event, the normalized result may be
+`HOST_LAUNCH_RECORD` containing host model/effort. With
+`handshake_only=true`, the broker stops after that response and does not send
+`turn/start`; the result carries `execution_status=NOT_STARTED` and is only
+launch evidence. A later turn with no `model/rerouted` event may provide
 `Identity: VERIFIED` with proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`. Overall
 `HOST_VERIFIED` additionally requires `execution_status=COMPLETED`. Set
 `SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; that route returns a
@@ -346,18 +348,20 @@ never satisfy `HOST_VERIFIED`.
 
 An app-server `thread/start` response is a stronger `HOST_MANAGED` launch
 record, but it is not automatically proof of effective execution. Accept it
-as `ROLE_MAPPING_AND_LAUNCH_RECORD` only when the same fresh ephemeral launch
-records exact `model=gpt-5.6-luna`, `reasoningEffort=max`, and a task-bound
-thread id, and the subsequent turn has no `model/rerouted` event. If the turn
-reports another effective model/effort, or a reroute event is emitted, classify
-the result as `HOST_MODEL_MISMATCH` and keep high-risk work blocked.
+as `ROLE_MAPPING_AND_LAUNCH_RECORD`/`HOST_LAUNCH_RECORDED` only when the same
+fresh ephemeral launch records exact `model=gpt-5.6-luna`,
+`reasoningEffort=max`, and a task-bound thread id. The identity-only handshake
+does not have a turn in which reroute can be observed; a later verification
+turn is required before `HOST_VERIFIED`. If that turn reports another
+effective model/effort, or a reroute event is emitted, classify the result as
+`HOST_MODEL_MISMATCH` and keep high-risk work blocked.
 
 This creates independent identity and execution facts: `TRANSPORT_VERIFIED`
 means the broker answered; `HOST_LAUNCH_RECORDED` means the host assigned
-Luna/max at thread start; `Identity: VERIFIED` means the matching turn had no
-host reroute; and overall `HOST_VERIFIED` means that identity is verified and
-`execution_status=COMPLETED`. A launch record alone is not the final retest
-result.
+Luna/max at thread start; `Identity: VERIFIED` means a subsequent matching
+turn had no host reroute; and overall `HOST_VERIFIED` means that identity is
+verified and `execution_status=COMPLETED`. A launch record alone is not the
+final retest result.
 
 The identity handshake remains synchronous. For an implementation packet that
 may exceed the caller's MCP deadline, submit with `execution_mode="async"`

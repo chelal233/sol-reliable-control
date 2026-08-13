@@ -268,8 +268,10 @@ labeled native. The broker must:
 - validate the task id, workdir, sandbox, prompt size, and allowed roots before
   starting the process;
 - require `handshake_only=true` with `read-only` sandbox before implementation;
-- return a task-bound `HOST_LAUNCH_RECORD`, runtime version/hash,
-  fresh/history facts, and the worker result; and
+- return a task-bound `HOST_LAUNCH_RECORD`, runtime version/hash, and
+  fresh/history facts at `thread/start` without dispatching `turn/start`; an
+  identity-only result has `execution_status=NOT_STARTED` and is not
+  `HOST_VERIFIED`; and
 - label model self-report as advisory. The app-server launch record can satisfy
   `identity=VERIFIED` only when it matches and no host reroute is observed.
   Overall `HOST_VERIFIED` additionally requires `execution_status=COMPLETED`.
