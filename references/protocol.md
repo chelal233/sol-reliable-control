@@ -235,6 +235,19 @@ result is therefore `STARTED_UNVERIFIED` until host identity evidence arrives.
 It is a usable operational Luna path, not permission to bypass `HOST_VERIFIED`
 for high-risk implementation.
 
+An app-server `thread/start` response is a stronger `HOST_MANAGED` launch
+record, but it is not automatically proof of effective execution. Accept it
+as `ROLE_MAPPING_AND_LAUNCH_RECORD` only when the same fresh ephemeral launch
+records exact `model=gpt-5.6-luna`, `reasoningEffort=max`, and a task-bound
+thread id, and the subsequent turn has no `model/rerouted` event. If the turn
+reports another effective model/effort, or a reroute event is emitted, classify
+the result as `HOST_MODEL_MISMATCH` and keep high-risk work blocked.
+
+This creates three separate retest states: `TRANSPORT_VERIFIED` means the
+broker answered; `HOST_LAUNCH_RECORDED` means the host assigned Luna/max at
+thread start; `HOST_VERIFIED` means the effective turn remained Luna/max with
+no host mismatch. A launch record alone is not the final retest result.
+
 ## Lane selection
 
 - Select `luna-max` by default for bounded work and difficult work whose scope remains narrow and independently verifiable.

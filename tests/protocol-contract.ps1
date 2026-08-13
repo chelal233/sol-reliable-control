@@ -77,6 +77,9 @@ Assert-Contains $adapters 'TOML/config alone is not proof' 'local role configura
 Assert-Contains $adapters 'MCP broker variant' 'managed Luna broker adapter must be documented'
 Assert-Contains $adapters 'BROKER_RUN_RECEIPT' 'broker receipt must remain distinct from host receipt'
 Assert-Contains $adapters 'STARTED_UNVERIFIED' 'broker self-report must remain unverified'
+Assert-Contains $adapters 'ROLE_MAPPING_AND_LAUNCH_RECORD' 'app-server launch record must be a distinct identity proof kind'
+Assert-Contains $adapters 'model/rerouted' 'app-server reroutes must invalidate launch identity'
+Assert-Contains $protocol 'HOST_LAUNCH_RECORDED' 'protocol must distinguish host launch from effective verification'
 
 Assert-Contains $enablement 'LUNA_MAX_REQUIRED' 'enablement packet must identify the required capability'
 Assert-Contains $enablement 'gpt-5.6-luna / max' 'enablement packet must bind the Luna model and effort'

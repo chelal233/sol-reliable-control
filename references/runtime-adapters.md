@@ -190,10 +190,19 @@ host observed model/effort: UNKNOWN unless the host supplies telemetry
 `BROKER_RUN_RECEIPT` is task-bound to the broker invocation but is not a
 `HOST_RECEIPT`. A matching worker self-report proves only that the requested
 prompt was answered; it does not prove the effective runtime identity. Treat a
-successful broker run as `STARTED_UNVERIFIED` and keep `HOST_VERIFIED` closed
-until the host returns independent model/effort evidence or an authoritative
-launch record. This adapter may be the operational Luna path, but it must not
-silently downgrade a high-risk plan.
+successful CLI broker run as `STARTED_UNVERIFIED` and keep `HOST_VERIFIED`
+closed until the host returns independent model/effort evidence or an
+authoritative launch record. This adapter may be the operational Luna path,
+but it must not silently downgrade a high-risk plan.
+
+The app-server `thread/start` response is a distinct host-managed launch
+record. It may be accepted as `ROLE_MAPPING_AND_LAUNCH_RECORD` only when all
+of these fields are captured from the same fresh ephemeral launch: exact
+requested `model`, exact `reasoningEffort`, task-bound thread id, and the
+absence of a `model/rerouted` event for that turn. A launch record that says
+Luna/max but is followed by a host reroute or an effective worker response
+that identifies another model/effort is `HOST_MODEL_MISMATCH`, not verified.
+The requested assignment and the effective turn identity are separate facts.
 
 ## Gate evaluation
 
@@ -203,7 +212,8 @@ silently downgrade a high-risk plan.
 2. The host returns a `HOST_RECEIPT` bound to the task packet.
 3. Fresh context is `VERIFIED` and controller history is `EXCLUDED`.
 4. Identity proof is `HOST_OBSERVED_MODEL_EFFORT` or
-   `ROLE_MAPPING_AND_LAUNCH_RECORD`, and it matches the request.
+   `ROLE_MAPPING_AND_LAUNCH_RECORD`, and it matches the request. For an
+   app-server record, no host reroute may be present.
 5. Scope is accepted and no host mismatch is reported.
 
 `HOST_DISPATCHED_UNATTESTED` is allowed only for a low-risk plan that asked

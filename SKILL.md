@@ -79,6 +79,11 @@ Keep these facts separate:
 
 For low-risk work, a valid host receipt may satisfy `HOST_DISPATCH` even when runtime identity is unavailable; record `HOST_DISPATCHED_UNATTESTED`. High-risk work requires `HOST_VERIFIED`. An explicit host mismatch or missing receipt is `BLOCKED`. A worker's self-report alone never proves identity and never creates a routing gate.
 
+An app-server `thread/start` launch record is stronger host evidence, but it is
+not automatically effective identity. Accept it only when the same fresh
+ephemeral launch records the exact requested model/effort and the subsequent
+turn has no `model/rerouted` event or conflicting effective identity.
+
 ## Native worker launch
 
 Prefer the host's native generic worker surface and a fresh context, but run
