@@ -16,7 +16,8 @@ Requested model/effort: <route binding>
 Luna enablement: REQUIRED
 Execution context: FRESH
 Controller history: EXCLUDED
-Identity gate: HOST_DISPATCH | HOST_VERIFIED
+Identity gate: HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
+Operator attestation: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Task packet: <bounded plan packet>
 ```
 
@@ -30,7 +31,10 @@ Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Dispatch receipt kind: HOST_RECEIPT | HOST_JOB_RECEIPT | AGENT_HANDLE | UNKNOWN
-Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | SELF_REPORT_ONLY | UNKNOWN
+Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | OPERATOR_UI_ATTESTATION | SELF_REPORT_ONLY | UNKNOWN
+Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
+Operator attestation: GRANTED | NOT_GRANTED | UNKNOWN
+Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
 ```
 
 `AVAILABLE` means the host says the request can be submitted. It does not
@@ -204,6 +208,15 @@ starts the local Sol broker, invokes `setupStart`, changes ACLs, or broadens
 permissions. It is not a native subagent and it must not be silently selected
 when `User-owned task` is denied.
 
+If the Desktop host omits effective model/effort telemetry, return
+`HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. The caller may select the
+explicit `OPERATOR_ATTESTED` gate only after a user-owned task is approved. The
+user must confirm the live GUI for the exact `threadId`/`hostId` shows
+`gpt-5.6-luna / max`; record `Identity proof kind: OPERATOR_UI_ATTESTATION`,
+`Identity: ATTESTED`, `Operator attestation: GRANTED`, and
+`Routing verdict: OPERATOR_UI_ATTESTED`. This evidence tier never satisfies
+`HOST_VERIFIED` and cannot be silently substituted for it.
+
 ### MCP broker variant
 
 The Sol Luna broker is a local STDIO MCP server that provides the priority-3
@@ -295,6 +308,17 @@ does not weaken the workdir allowlist or identity gate.
    `ROLE_MAPPING_AND_LAUNCH_RECORD`, and it matches the request. For an
    app-server record, no host reroute may be present.
 5. Scope is accepted and no host mismatch is reported.
+
+`OPERATOR_UI_ATTESTED` is a separate explicit gate for a user-owned Desktop
+task. It requires `Identity gate: OPERATOR_ATTESTED`,
+`Operator attestation: GRANTED`, `User approval: GRANTED`, a task-bound
+`threadId`/`hostId`, fresh context, controller history excluded, no explicit
+host mismatch/reroute, and a written operator confirmation that the live GUI
+for that exact task displays `gpt-5.6-luna / max`. Use
+`Identity proof kind: OPERATOR_UI_ATTESTATION` and `Identity: ATTESTED`.
+This is not `HOST_LAUNCH_RECORDED` or `HOST_VERIFIED`. For `HIGH` work it also
+requires an isolated worktree, no secrets/destructive/ACL/external side effects,
+no descendants, and Sol review before commit or merge.
 
 `HOST_DISPATCHED_UNATTESTED` is allowed only for a low-risk plan that asked
 for `HOST_DISPATCH`, with a valid host receipt and no explicit mismatch. It is

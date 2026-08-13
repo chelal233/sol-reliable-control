@@ -132,11 +132,12 @@ Key controls are:
 
 1. Native -> (explicitly approved) Desktop task -> MCP; no implicit user-task creation.
 2. Exact lane binding: `gpt-5.6-luna / max` and `gpt-5.6-sol / xhigh`; no silent model substitution.
-3. Independent transport, launch-identity, execution, freshness, and history gates.
-4. Project selection before Desktop tasks; projectless is handshake-only.
-5. No Sol-owned ACL/token repair or broad permission changes after sandbox failures.
-6. Same-job polling after MCP timeouts; no duplicate implementation packet.
-7. Source/runtime hash equality and privacy/protocol/broker tests before publication.
+3. Independent transport, launch-identity, execution, freshness, and history gates; `HOST_MODEL_UNOBSERVABLE` is not `HOST_MODEL_MISMATCH`.
+4. A Desktop GUI picker is not host identity evidence by default; an explicitly approved `OPERATOR_ATTESTED` plan may record `OPERATOR_UI_ATTESTED` with `Identity: ATTESTED`, never `HOST_VERIFIED`.
+5. Project selection before Desktop tasks; projectless is handshake-only.
+6. No Sol-owned ACL/token repair or broad permission changes after sandbox failures.
+7. Same-job polling after MCP timeouts; no duplicate implementation packet.
+8. Source/runtime hash equality and privacy/protocol/broker tests before publication.
 
 ## Verification
 

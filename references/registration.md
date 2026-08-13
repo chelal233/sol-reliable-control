@@ -185,6 +185,25 @@ self-report is insufficient. If the task reports `PROCESS_CREATION_DENIED` or
 `WINDOWS_SANDBOX_ACL_FAILED`, stop with an execution blocker; do not request
 or perform broad ACL/token changes.
 
+If the Desktop API omits effective model/effort, record
+`HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. A caller may deliberately
+replan this user-owned task with:
+
+```text
+Identity gate: OPERATOR_ATTESTED
+Operator attestation: REQUIRED
+User-owned task: ALLOWED
+User approval: GRANTED
+```
+
+The user must then confirm that the live GUI for the exact `threadId`/`hostId`
+shows `gpt-5.6-luna / max`. Record `Operator attestation: GRANTED`,
+`Identity proof kind: OPERATOR_UI_ATTESTATION`, `Identity: ATTESTED`, and
+`Routing verdict: OPERATOR_UI_ATTESTED`. This does not create a host launch
+record or satisfy `HOST_VERIFIED`. A `HIGH` exception must use an isolated
+worktree, forbid secrets/destructive/ACL/external side effects and descendants,
+and require Sol review before commit or merge.
+
 ## Priority 3 adapter: register the Sol Luna MCP broker
 
 Use this explicit priority-3 `HOST_MANAGED` adapter when the current Desktop

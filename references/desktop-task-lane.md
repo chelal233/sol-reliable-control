@@ -68,7 +68,9 @@ authorized, uses `codex_app__send_message_to_thread` with the same ids and
 
 ## Evidence gates
 
-The app task surface has the same three independent gates as the MCP broker:
+The app task surface has the same independent transport, identity, execution,
+freshness, and history gates as the MCP broker, plus one explicit operator
+attestation tier:
 
 1. `TRANSPORT_VERIFIED`: `create_thread` returned a ready `threadId` and
    `hostId`, and the task can be observed by the host.
@@ -78,13 +80,31 @@ The app task surface has the same three independent gates as the MCP broker:
 3. `HOST_VERIFIED`: the launch record is exact, the task is fresh, controller
    history is excluded, no reroute/model conflict is observed, and the requested
    handshake/turn completed successfully.
+4. `OPERATOR_UI_ATTESTED` (explicit alternative): when the host omits effective
+   model/effort telemetry, the user may attest that the live GUI for this exact
+   task/thread displays `gpt-5.6-luna / max`. This requires an explicit plan
+   `Identity gate: OPERATOR_ATTESTED`, `User approval: GRANTED`, and
+   `Operator attestation: GRANTED`; retain `threadId`/`hostId`, fresh task
+   evidence, history exclusion, and no explicit host mismatch/reroute. Record
+   `Identity: ATTESTED` and keep the residual risk visible. It is not a host
+   launch record and never upgrades to `HOST_VERIFIED`.
 
 If the app surface returns only a task id and no host-observed model/effort,
-stop at `TRANSPORT_VERIFIED` and report `IDENTITY_UNVERIFIED`; do not infer
-Luna from the UI. If the task reports `PROCESS_CREATION_DENIED`,
+report `HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. Under the normal
+`HOST_VERIFIED` gate, stop at `TRANSPORT_VERIFIED` and report `IDENTITY_UNVERIFIED`;
+do not silently infer Luna from the UI. If the plan explicitly selects the
+operator-attested gate, the live user confirmation may produce
+`OPERATOR_UI_ATTESTED` as described above. If the task reports `PROCESS_CREATION_DENIED`,
 `WINDOWS_SANDBOX_ACL_FAILED`, or another runtime permission error, keep the
 identity facts separate, mark execution blocked, and stop. This adapter never
 requests or performs an ACL repair.
+
+For a `HIGH` task, `OPERATOR_UI_ATTESTED` is an explicit exception to the normal
+host-identity gate, never an automatic downgrade. The plan must name the exact
+isolated worktree and exclusions, forbid secrets, ACL/token changes, destructive
+operations, external side effects, and descendant creation, and require Sol's
+independent review before commit or merge. If those limits are not present, the
+task remains `BLOCKED` until `HOST_VERIFIED` is available.
 
 ## Freshness and privacy
 

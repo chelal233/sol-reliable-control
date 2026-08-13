@@ -142,7 +142,7 @@ Keep these facts separate:
 - `self_report_consistent`: the worker's self-reported identity happens to match host facts; this is advisory.
 - `evidence_verified`: the result is bound to the final candidate and its verification.
 
-For low-risk work, a valid host receipt may satisfy `HOST_DISPATCH` even when runtime identity is unavailable; record `HOST_DISPATCHED_UNATTESTED`. High-risk work requires `HOST_VERIFIED`. An explicit host mismatch or missing receipt is `BLOCKED`. A worker's self-report alone never proves identity and never creates a routing gate.
+For low-risk work, a valid host receipt may satisfy `HOST_DISPATCH` even when runtime identity is unavailable; record `HOST_DISPATCHED_UNATTESTED`. A Desktop task with no effective model telemetry is `HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. If the user explicitly approves an `OPERATOR_ATTESTED` Desktop gate, the operator may confirm the live GUI for the exact task/thread shows `gpt-5.6-luna / max`; record `OPERATOR_UI_ATTESTED`, `Identity: ATTESTED`, and the attestation evidence. This never becomes `HOST_LAUNCH_RECORDED` or `HOST_VERIFIED`. High-risk work normally requires `HOST_VERIFIED`; an operator-attested exception requires an explicit plan gate, isolated worktree, no secrets/destructive/ACL/external side effects or descendants, and Sol review before commit or merge. An explicit host mismatch or missing receipt is `BLOCKED`. A worker's self-report alone never proves identity and never creates a routing gate.
 
 An app-server `thread/start` launch record is stronger host evidence, but it is
 not automatically effective identity. Accept it only when the same fresh
@@ -246,8 +246,10 @@ APIs. It is therefore the safe alternative when the user forbids external
 permission changes. It still runs under whatever execution policy the Desktop
 host reports: a `PROCESS_CREATION_DENIED` result is an execution block, not a
 reason to request broad ACL changes. The app task's `threadId`/`hostId` is a
-transport receipt only until the host reports effective Luna/max; UI selection
-and worker self-report remain advisory.
+transport receipt only until the host reports effective Luna/max. If telemetry
+is absent, classify `HOST_MODEL_UNOBSERVABLE`; do not call it a mismatch. Only
+an explicit `OPERATOR_ATTESTED` plan may use the user's live GUI confirmation as
+`OPERATOR_UI_ATTESTED`, and that evidence remains separate from host identity.
 
 ### MCP Luna broker
 

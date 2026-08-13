@@ -22,7 +22,8 @@ Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
 Registration action: NONE | REQUEST_HOST_ENABLEMENT | REGISTER_CUSTOM_ROLE | REFRESH_PREFLIGHT
 Capability preflight: REQUIRED
 Task risk: LOW | HIGH
-Identity gate: HOST_DISPATCH | HOST_VERIFIED
+Identity gate: HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
+Operator attestation: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Task scope: <exact files, components, or behaviors owned by this task>
 Do not touch: <paths, behaviors, or systems excluded>
 Dependencies: <ordered prerequisites or None>
@@ -155,16 +156,19 @@ Controller-history proof: EXCLUDED | UNKNOWN | FAIL
 Transport: PASS | FAIL
 Dispatch receipt: <host receipt id/path or UNKNOWN>
 Dispatch receipt kind: HOST_RECEIPT | HOST_JOB_RECEIPT | AGENT_HANDLE | UNKNOWN
-Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | SELF_REPORT_ONLY | UNKNOWN
-Identity: VERIFIED | UNVERIFIED | FAIL
+Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | OPERATOR_UI_ATTESTATION | SELF_REPORT_ONLY | UNKNOWN
+Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
+Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
 Self-report warning: NONE | MISMATCH | UNKNOWN
 Scope accepted: YES | NO
 Blocker: <None or concrete reason>
 ```
 
-`Host requested model`, `Host observed model`, `Requested effort`, `Observed effort`, and `Dispatch receipt` are host facts. Worker self-report fields are advisory. Transport success is not identity proof. An `AGENT_HANDLE` is not a `HOST_RECEIPT` unless the host contract says it is task-bound. Extra runtime or UI fields are advisory and cannot add a gate.
+`Host requested model`, `Host observed model`, `Requested effort`, `Observed effort`, and `Dispatch receipt` are host facts. Worker self-report fields are advisory. Transport success is not identity proof. An `AGENT_HANDLE` is not a `HOST_RECEIPT` unless the host contract says it is task-bound. Extra runtime or UI fields are advisory and cannot add a `HOST_VERIFIED` gate.
 
-For `Identity gate: HOST_DISPATCH`, a valid `HOST_RECEIPT` with no explicit host mismatch may continue as `HOST_DISPATCHED_UNATTESTED`. For `HOST_VERIFIED`, host-observed model/effort or an authoritative custom-role launch record must match the request; unavailable proof is `BLOCKED`. An explicit host mismatch or missing receipt is always `BLOCKED`; do not silently reroute.
+For `Identity gate: HOST_DISPATCH`, a valid `HOST_RECEIPT` with no explicit host mismatch may continue as `HOST_DISPATCHED_UNATTESTED`. For `Identity gate: OPERATOR_ATTESTED`, a user-owned Desktop task may continue as `OPERATOR_UI_ATTESTED` only when the plan explicitly requests that gate, `User approval: GRANTED`, `Operator attestation: GRANTED`, and the operator confirms the live GUI for the exact task/thread shows `gpt-5.6-luna / max`. The operator evidence is not host telemetry and must be recorded as `Identity: ATTESTED`; it never upgrades to `HOST_LAUNCH_RECORDED` or `HOST_VERIFIED`. For `HOST_VERIFIED`, host-observed model/effort or an authoritative custom-role launch record must match the request; unavailable proof is `BLOCKED`. An explicit host mismatch or missing receipt is always `BLOCKED`; do not silently change the requested gate.
+
+`HOST_MODEL_UNOBSERVABLE` means that the host did not expose effective model/effort telemetry. It is not `HOST_MODEL_MISMATCH` and must not be reported as proof that the worker is not Luna. A UI picker, a request parameter, or a worker self-report remains advisory unless the caller explicitly selects the operator-attested gate.
 
 The complete adapter contract and normalized field mapping are in
 [references/runtime-adapters.md](runtime-adapters.md).
@@ -296,6 +300,16 @@ an existing thread, or a fork is not fresh evidence. This route never invokes
 the local Sol broker or performs ACL/token remediation; a process-creation
 failure remains an execution blocker.
 
+When the Desktop host does not expose effective model/effort telemetry, classify
+the result as `HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. A caller may
+explicitly replan a user-owned Desktop task with `Identity gate:
+OPERATOR_ATTESTED` and `Operator attestation: REQUIRED`; after the user confirms
+the live GUI for that exact task/thread shows `gpt-5.6-luna / max`, set
+`Operator attestation: GRANTED`, `Identity: ATTESTED`, and
+`Routing verdict: OPERATOR_UI_ATTESTED`. This is a deliberate evidence tier,
+not a host launch record. It must never be silently substituted for a plan that
+requires `HOST_VERIFIED`.
+
 ### MCP Luna broker dispatch
 
 When native worker tools are absent from the current thread, their schema/model
@@ -374,7 +388,7 @@ without the nested result.
 - `SOL_XHIGH` is a normal replan, not an implicit fallback. Use it only when task fit or the repeated-failure escalation gate independently selects it.
 - If the same issue has been rejected more than twice under `luna-max`, or unclear business semantics repeatedly cause regressions, stop retrying `luna-max` and route the issue to `sol-xhigh` with the failure evidence.
 - `FALLBACK` is an explicit recovery route. It may name any safe compatible lane, but it is not a normal route and must be labeled `UNVERIFIED`.
-- Fallback is limited to low-risk, narrow, independently verifiable work. High-risk work returns `BLOCKED` when the requested lane cannot be verified.
+- Fallback is limited to low-risk, narrow, independently verifiable work. High-risk work returns `BLOCKED` when the requested lane cannot be verified, unless the plan explicitly selected `OPERATOR_ATTESTED` and satisfies that gate's isolated-worktree, no-side-effect, and Sol-review controls.
 
 Do not encode a fixed quality ranking. Model names, cost, and effort settings are runtime facts; acceptance evidence is the quality basis.
 
@@ -386,8 +400,10 @@ Status: PASS | PASS_WITH_WARNING | BLOCKED | HOST_REMEDIATION_REQUIRED
 Summary: <what happened>
 Changed or produced: <exact paths, artifacts, or None>
 Verification: <checks, exit status, concise result>
-Routing verdict: HOST_VERIFIED | HOST_LAUNCH_RECORDED | HOST_DISPATCHED_UNATTESTED | HOST_MODEL_MISMATCH | DISPATCH_UNCONFIRMED
-Identity: VERIFIED | UNVERIFIED | FAIL
+Routing verdict: HOST_VERIFIED | HOST_LAUNCH_RECORDED | OPERATOR_UI_ATTESTED | HOST_DISPATCHED_UNATTESTED | HOST_MODEL_UNOBSERVABLE | HOST_MODEL_MISMATCH | DISPATCH_UNCONFIRMED
+Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
+Operator attestation: GRANTED | NOT_GRANTED | UNKNOWN
+Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
 Broker execution_status: COMPLETED | FAILED | NOT_STARTED | UNKNOWN
 Broker failure code: <concrete code or None>
 Self-report warning: NONE | MISMATCH | UNKNOWN
@@ -401,8 +417,15 @@ Permission request: <smallest host/admin action or None>
 Next action: <concrete user/host operation or None>
 ```
 
-`PASS` requires `Changed or produced`, `Verification`, and `Evidence`. For a
-broker result, `HOST_VERIFIED` requires both `Identity: VERIFIED` and
+`PASS` requires `Changed or produced`, `Verification`, and `Evidence`. For an
+operator-attested Desktop result, `OPERATOR_UI_ATTESTED` requires the explicit
+`Identity gate: OPERATOR_ATTESTED`, `Operator attestation: GRANTED`, a
+task-bound `threadId`/`hostId`, a fresh task, controller history excluded, no
+explicit host model mismatch/reroute, and `Identity: ATTESTED`. It must include
+the exact task/thread confirmation and the model/effort observed by the user.
+It is not `HOST_LAUNCH_RECORDED` or `HOST_VERIFIED`; the residual identity risk
+must remain in `Blocker` or `Next action`. For a broker result, `HOST_VERIFIED`
+requires both `Identity: VERIFIED` and
 `execution_status=COMPLETED`. `WINDOWS_SANDBOX_ACL_FAILED` and
 `PROCESS_CREATION_DENIED` are execution blockers with failure class `runtime`
 or `permission`; they do not change the independent identity fact, but they

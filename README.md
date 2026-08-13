@@ -57,11 +57,12 @@ Luna 模型资料、Windows sandbox 说明、上游 setup 源码和运行问题�
 
 1. 路由顺序固定为 Native →（明确批准时）Desktop task → MCP；未批准时不创建 user-owned task。
 2. `LUNA_MAX` 始终绑定 `gpt-5.6-luna / max`，`SOL_XHIGH` 绑定 `gpt-5.6-sol / xhigh`，不静默换模型。
-3. `TRANSPORT_VERIFIED`、`HOST_LAUNCH_RECORDED`、`HOST_VERIFIED` 分层；UI、self-report、裸 `agent_id` 不能单独证明身份。
-4. Desktop task 必须选择正确项目/工作树；projectless 只用于握手，local 目录必须显式授权。
-5. Windows sandbox ACL/进程创建失败是宿主执行故障；Sol 不调用 `setupStart`、`icacls`、`Set-Acl` 或扩大权限。
-6. MCP 超时使用同一 `job_id` 轮询，禁止重复提交实现包；身份与执行失败分离记录。
-7. 发布 GitHub 前必须检查未跟踪文件、秘密、机器路径、旧 worktree、原始日志和许可证归属，并在源/运行时两端运行三组契约测试。
+3. `TRANSPORT_VERIFIED`、`HOST_LAUNCH_RECORDED`、`HOST_VERIFIED` 分层；`HOST_MODEL_UNOBSERVABLE` 不等于 `HOST_MODEL_MISMATCH`。
+4. Desktop GUI 默认不能证明 `HOST_VERIFIED`；用户明确批准 `OPERATOR_ATTESTED` 后，可记录 `OPERATOR_UI_ATTESTED`，并保留 `Identity: ATTESTED` 与残余风险。
+5. Desktop task 必须选择正确项目/工作树；projectless 只用于握手，local 目录必须显式授权。
+6. Windows sandbox ACL/进程创建失败是宿主执行故障；Sol 不调用 `setupStart`、`icacls`、`Set-Acl` 或扩大权限。
+7. MCP 超时使用同一 `job_id` 轮询，禁止重复提交实现包；身份与执行失败分离记录。
+8. 发布 GitHub 前必须检查未跟踪文件、秘密、机器路径、旧 worktree、原始日志和许可证归属，并在源/运行时两端运行三组契约测试。
 
 ## 安装
 

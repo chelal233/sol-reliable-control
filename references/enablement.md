@@ -170,6 +170,15 @@ fresh/history evidence; UI selection and worker self-report are advisory. This
 route does not run the local MCP broker or perform ACL/token remediation. A
 process-creation or sandbox-permission failure remains an execution blocker.
 
+If the host does not expose effective model/effort, classify the result as
+`HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. The caller may use an
+explicit `OPERATOR_ATTESTED` gate only after the user confirms the live GUI for
+the exact task/thread shows `gpt-5.6-luna / max`; record
+`OPERATOR_UI_ATTESTED` and `Identity: ATTESTED`. This is not host enablement,
+not `HOST_LAUNCH_RECORDED`, and not `HOST_VERIFIED`. For `HIGH` work, retain an
+isolated worktree, no secrets/destructive/ACL/external side effects or
+descendants, and Sol review before commit or merge.
+
 The installed Sol Luna MCP broker is an explicit managed transport for hosts
 where the native surface is not visible, is schema/model-incompatible, or
 native preflight cannot produce the required host evidence, and the conditional

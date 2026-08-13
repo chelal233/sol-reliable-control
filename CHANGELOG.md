@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an explicit operator-attested Desktop evidence tier for hosts that omit
+  effective model/effort telemetry; keep `HOST_VERIFIED` strict.
 - Make native -> explicitly approved Desktop -> MCP the documented Luna route.
 - Add tri-state user-owned-task authorization so missing approval is not silently
   normalized to `DENIED`.

@@ -179,7 +179,7 @@ every route. The following matrix must be read before selecting a surface:
 | Route | Advantages | Costs / failure modes | Required mitigation |
 | --- | --- | --- | --- |
 | Native subagent | Lowest visibility overhead; no user-owned task; best controller-context isolation | Current-thread tool may be absent; model allowlist may expose only Sol/Terra; custom role metadata may disagree with the host | Enumerate the current thread; verify exact schema, fresh semantics, receipt, and host-observed Luna/max; never borrow sibling evidence |
-| Desktop task | Uses the host's explicit Luna task surface; avoids Sol's nested local MCP broker; visible and easy for a user to inspect | Creates a user-owned task; projectless mode cannot touch a repo; project/local mode may have host sandbox limits; effective model telemetry may be absent | Require explicit approval; call `list_projects` first; prefer a fresh worktree; retain `threadId` + `hostId`; stop at `TRANSPORT_VERIFIED` when effective identity is not observable |
+| Desktop task | Uses the host's explicit Luna task surface; avoids Sol's nested local MCP broker; visible and easy for a user to inspect | Creates a user-owned task; projectless mode cannot touch a repo; project/local mode may have host sandbox limits; effective model telemetry may be absent | Require explicit approval; call `list_projects` first; prefer a fresh worktree; retain `threadId` + `hostId`; classify missing telemetry as `HOST_MODEL_UNOBSERVABLE`; use `OPERATOR_UI_ATTESTED` only under an explicit operator-attested gate and never call it `HOST_VERIFIED` |
 | MCP broker | Stable Sol-owned schema; allowed-root validation; async receipt/polling; useful when native and approved Desktop routes are unavailable | Starts a local app-server; Windows sandbox setup can fail before a command runs; caller deadline can hide a pending job; it is not native evidence | Use as priority 3; handshake synchronously, implementation asynchronously; pin runtime path/hash; never widen ACLs from Sol; poll the same job and do not duplicate packets |
 
 ### Problem and solution catalog
@@ -219,9 +219,16 @@ model/effort; the worker says only `unobservable`.
 
 **Risk:** treating the requested model field or UI picker as `HOST_VERIFIED`.
 
-**Solution:** accept only `TRANSPORT_VERIFIED`; keep `HOST_LAUNCH_RECORDED` and
-`HOST_VERIFIED` closed until the host reports effective Luna/max, fresh context,
-history exclusion, and no reroute/conflict.
+**Solution:** classify the result as `HOST_MODEL_UNOBSERVABLE`, not
+`HOST_MODEL_MISMATCH`. Keep `HOST_LAUNCH_RECORDED` and `HOST_VERIFIED` closed
+until the host reports effective Luna/max, fresh context, history exclusion, and
+no reroute/conflict. If the user explicitly selects `Identity gate:
+OPERATOR_ATTESTED`, the live GUI confirmation may produce
+`OPERATOR_UI_ATTESTED` with `Identity: ATTESTED`; it remains a separate,
+weaker evidence tier and must carry residual-risk and scope controls.
+For `HIGH` work, that explicit exception additionally requires an isolated
+worktree, no secrets/destructive/ACL/external side effects or descendants, and
+Sol review before commit or merge; otherwise keep the task blocked.
 
 #### D. Windows sandbox ACL or process creation failure
 
