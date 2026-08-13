@@ -1,0 +1,29 @@
+name: contracts
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  powershell-contracts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse PowerShell
+        shell: pwsh
+        run: |
+          $files = @('scripts/sol-luna-broker.ps1','tests/broker-contract.ps1','tests/privacy-contract.ps1','tests/protocol-contract.ps1')
+          foreach ($file in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { throw "Parse failure: $file" }
+          }
+      - name: Contract tests
+        shell: pwsh
+        run: |
+          & .\tests\protocol-contract.ps1
+          & .\tests\privacy-contract.ps1
+          & .\tests\broker-contract.ps1
+      - name: Diff check
+        shell: pwsh
+        run: git diff --check

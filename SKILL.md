@@ -41,23 +41,23 @@ Choose the cheapest route that satisfies the task:
 
 Normal execution has only the `luna-max` and `sol-xhigh` lanes. Do not select a lane by name, price, or prestige; use task fit and acceptance evidence.
 
-For every normal `LUNA_MAX` dispatch, use this Native-first -> Desktop -> MCP
+For every normal `LUNA_MAX` dispatch, use this Native-first -> MCP -> Desktop
 dispatch ladder:
 
 1. Use a current-thread native subagent surface whose declared schema, exact
    Luna/max pair, fresh-context semantics, and host evidence satisfy the plan.
    `multi_agent_v1__spawn_agent` is canonical; a future equivalent qualifies
    only when the host declares it native and its contract can be verified.
-2. If native preflight fails and the plan sets `Surface: USER_VISIBLE_TASK`,
-   `User-owned task: ALLOWED`, and records the user's approval, use the
-   explicit Desktop task adapter. If the plan does not allow a user-owned task,
-   skip this step; do not create one implicitly.
-3. Use the `HOST_MANAGED` `sol_luna_broker` MCP only after native preflight and
-   the eligible Desktop task attempt (or explicit Desktop-task skip) fail.
+2. If native preflight fails, use the `HOST_MANAGED` `sol_luna_broker` MCP and
+   record the native decision. Do not change the requested model.
+3. Only if MCP is unavailable or fails, and the plan sets
+   `Surface: USER_VISIBLE_TASK`, `User-owned task: ALLOWED`, and records the
+   user's approval, use the explicit Desktop task adapter. If authorization is
+   `UNSPECIFIED`, ask for confirmation; never synthesize `DENIED`.
 4. If MCP preflight also fails, preserve `LUNA_MAX` and return `BLOCKED` under
    the existing fail-closed rules. Do not switch models.
 
-The Desktop task is now the conditional priority-2 route. Its exact fields are
+The Desktop task is now the conditional priority-3 route. Its exact fields are
 defined in [references/desktop-task-lane.md](references/desktop-task-lane.md);
 the route remains user-visible and never grants Sol permission to create a task
 without explicit approval.
@@ -96,10 +96,11 @@ task-bound probe; never loop on an unchanged failure.
 Use this recovery order for a Luna task that has not reached `HOST_VERIFIED`:
 
 1. Run a native, handshake-only probe on the current thread.
-2. If native preflight is unavailable or lacks host evidence and the plan allows
-   a user-owned task, run the Desktop task handshake as priority 2.
-3. If Desktop is not allowed, its handshake fails, or the caller explicitly
-   skips it, run the MCP broker handshake as priority 3 and record the earlier
+2. If native preflight is unavailable or lacks host evidence, run the MCP broker
+   handshake as priority 2 and record the native failure.
+3. If MCP is unavailable or fails, run the Desktop task handshake as priority 3
+   only after explicit user-owned-task approval; otherwise record the
+   authorization state. If either route reports `WINDOWS_SANDBOX_ACL_FAILED`,
    failures. If either route reports `WINDOWS_SANDBOX_ACL_FAILED`,
    `PROCESS_CREATION_DENIED`, or a model/role registration mismatch, return
    `HOST_REMEDIATION_REQUIRED` with an exact permission/host-registration
@@ -232,7 +233,10 @@ for the exact `codex_app__list_projects`, `codex_app__create_thread`,
 `codex_app__wait_threads`, `codex_app__read_thread`, and
 `codex_app__send_message_to_thread` sequence. The route uses the host's
 `model="gpt-5.6-luna"` and `thinking="max"` fields, requires a fresh task, and
-keeps controller history out of the initial prompt.
+keeps controller history out of the initial prompt. This is priority 3: use it
+only after the priority-2 MCP route is unavailable or fails and the plan records
+`User-owned task: ALLOWED` plus `User approval: GRANTED`. `UNSPECIFIED` requires
+confirmation; it is not an implicit denial.
 
 This route does not call the local Sol broker, `setupStart`, PowerShell, or ACL
 APIs. It is therefore the safe alternative when the user forbids external
@@ -244,10 +248,10 @@ and worker self-report remain advisory.
 
 ### MCP Luna broker
 
-At priority 3, use the installed `sol_luna_broker` MCP server as the explicit
+At priority 2, use the installed `sol_luna_broker` MCP server as the explicit
 `HOST_MANAGED` transport adapter only when the native surface is not visible in
-the current Desktop thread, the eligible Desktop task was skipped or failed,
-its schema/model cannot express the requested Luna/max contract, or native preflight cannot obtain the required host evidence.
+the current Desktop thread, its schema/model cannot express the requested Luna/max
+contract, or native preflight cannot obtain the required host evidence.
 This changes the transport surface, not the requested model. It is not a silent
 model fallback. MCP is not a native subagent, and MCP evidence must never be
 labeled native. The broker must:
@@ -299,8 +303,8 @@ sol_luna_exec({
 })
 ```
 
-Use the broker only after recording the native candidate, the Desktop task
-decision, and one of the priority-3 trigger conditions above. Keep the high-risk identity gate closed
+Use the broker after recording the native candidate and one of the priority-2
+trigger conditions above. Keep the high-risk identity gate closed
 until the host supplies independent identity evidence; a worker self-report
 never creates `HOST_VERIFIED`. If broker preflight also fails, return
 `HOST_REMEDIATION_REQUIRED` with the exact next host action; the implementation

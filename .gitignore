@@ -1,0 +1,22 @@
+# Local Codex/runtime configuration and broker output
+*.local.toml
+*.secrets*
+.env
+.env.*
+artifacts/
+logs/
+tmp/
+temp/
+*.log
+*.jsonl
+
+# PowerShell/editor/build noise
+*.ps1xml
+*.user
+*.suo
+bin/
+obj/
+
+# Never commit machine-specific runtime copies or host role files
+.codex/
+codex-runtime/

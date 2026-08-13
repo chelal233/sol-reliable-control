@@ -18,33 +18,32 @@ workflow. When a safe host repair remains possible, return
 evidence, minimal read-only probe, and next action. Do not leave the caller
 with only “blocked” or loop on an unchanged packet.
 
-The recovery order is fixed: native handshake -> (if explicitly authorized)
-Desktop task handshake -> MCP handshake -> explicit user or host-owner approval
+The recovery order is fixed: native handshake -> MCP handshake -> (if explicitly
+authorized) Desktop task handshake -> explicit user or host-owner approval
 for the smallest registry/sandbox/token repair -> refresh/rebind. A repair still
 requires a new task's minimal PowerShell read-only probe. Do not retry the
 implementation packet until the selected probe succeeds.
 
-`LUNA_MAX` uses **Native-first -> Desktop-task -> MCP** routing. Priority 1 is a native
+`LUNA_MAX` uses **Native-first -> MCP -> Desktop-task** routing. Priority 1 is a native
 subagent surface that is visible to the current thread and matches the worker
 contract. The canonical surface is `multi_agent_v1__spawn_agent`; a future equivalent
 qualifies only if the host declares and verifies its contract, schema, requested
 model, effort, and identity evidence.
 
-After native preflight fails, use the explicit Desktop task as Priority 2 only
-when the plan permits a user-owned task and the user has approved it. Otherwise
-skip it without creating a task. Use
-`mcp__sol_luna_broker__sol_luna_exec` as Priority 3 only when native fails and
-the Desktop task is skipped or fails. This MCP route is `HOST_MANAGED`: MCP is not a native subagent. It is not a silent model fallback. If all three routes
+After native preflight fails, use `mcp__sol_luna_broker__sol_luna_exec` as Priority
+2. Only when MCP is unavailable or fails, and the plan permits a user-owned task
+with explicit user approval, use the Desktop task as Priority 3. Otherwise skip
+it without creating a task. This MCP route is `HOST_MANAGED`: MCP is not a native subagent. It is not a silent model fallback. If all three routes
 fail, retain the requested `gpt-5.6-luna / max` and return `BLOCKED` under the
 existing failure rules.
-The MCP trigger includes the case where native preflight cannot obtain the required host evidence; record that failure before selecting Priority 3.
+The MCP trigger includes the case where native preflight cannot obtain the required host evidence; record that failure before selecting Priority 2.
 
 The conditional `USER_VISIBLE_TASK` route follows the approach in
 `sol-advisor`: use the host-owned `codex_app__create_thread` surface with
 `gpt-5.6-luna / max` to create a visible task after native preflight fails. It
 is not a native sub-agent or a Luna enablement mechanism. It is attempted only
-when the plan permits a user-owned task and the user has explicitly approved it;
-otherwise the controller proceeds to MCP Priority 3.
+after MCP fails, when the plan permits a user-owned task and the user has
+explicitly approved it; otherwise it is skipped.
 
 This Desktop task route does not start the local Sol broker, call `setupStart`,
 run PowerShell, or change ACLs. If the host still reports
@@ -82,18 +81,22 @@ placeholder before saving; no machine-specific paths are stored in this repo.
 
 ```toml
 [mcp_servers.sol_luna_broker]
-command = "pwsh"
+command = "<trusted-pwsh-path>"
 args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "<CODEX_HOME>\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
 enabled = true
 
 [mcp_servers.sol_luna_broker.env]
-SOL_LUNA_ALLOWED_ROOTS = "<approved-worktree-root>;<sol-reliable-control-worktree-root>;<sol-reliable-control-root>"
+SOL_LUNA_ALLOWED_ROOTS = "<approved-phase-worktree>"
+SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable>"
+SOL_LUNA_RUNTIME_SHA256 = "<64-hex-approved-sha256>"
 ```
 
 The broker requires explicit allowed roots and has no implicit filesystem
 roots. Restart Codex, then call `sol_luna_exec` first with
 `handshake_only=true` and `sandbox="read-only"`. MCP output redacts user-home
 paths, `DESKTOP-*` host names, and credential-shaped values.
+The runtime path and SHA-256 pin are mandatory; the broker never selects a
+different “latest” executable implicitly.
 
 For implementation packets that may exceed the caller's MCP deadline, keep the
 identity handshake synchronous, then submit the packet with
@@ -104,6 +107,10 @@ nested worker payload is the final result; evaluate its `HOST_LAUNCH_RECORD`,
 `HOST_VERIFIED`, or `BLOCKED` state using the normal identity gate. A single
 `tools/call` timeout is not proof that the worker failed, and the same packet
 must not be submitted again.
+
+Before public distribution, the repository owner must choose and add a
+`LICENSE`. This project does not infer a license from the reference projects or
+present an unlicensed checkout as a reusable release.
 
 ## Reference projects and official documentation
 
@@ -119,7 +126,7 @@ The public reference projects are
 
 Key controls are:
 
-1. Native -> (explicitly approved) Desktop task -> MCP; no implicit user-task creation.
+1. Native -> MCP -> (explicitly approved) Desktop task; no implicit user-task creation.
 2. Exact lane binding: `gpt-5.6-luna / max` and `gpt-5.6-sol / xhigh`; no silent model substitution.
 3. Independent transport, launch-identity, execution, freshness, and history gates.
 4. Project selection before Desktop tasks; projectless is handshake-only.

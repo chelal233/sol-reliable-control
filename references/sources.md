@@ -112,13 +112,14 @@ The default Luna order is:
 
 ```text
 1. NATIVE_GENERIC / CUSTOM_ROLE native surface
-2. USER_VISIBLE_TASK Desktop task (only with explicit user approval)
-3. HOST_MANAGED sol_luna_broker MCP
+2. HOST_MANAGED sol_luna_broker MCP
+3. USER_VISIBLE_TASK Desktop task (only with explicit user approval)
 ```
 
-The second step is conditional, not an automatic user-task creation. If the
-plan says `User-owned task: DENIED`, or approval is absent, Sol records the skip
-and continues to the third step. `EXPLICIT_USER_VISIBLE_TASK` is reserved for
+The third step is conditional, not an automatic user-task creation. If the
+plan says `User-owned task: DENIED`, Sol skips it. If authorization is
+`UNSPECIFIED`, Sol requests confirmation rather than synthesizing a denial.
+`EXPLICIT_USER_VISIBLE_TASK` is reserved for
 an operator-selected override and still requires the same approval and identity
 gates.
 
@@ -179,7 +180,7 @@ every route. The following matrix must be read before selecting a surface:
 | --- | --- | --- | --- |
 | Native subagent | Lowest visibility overhead; no user-owned task; best controller-context isolation | Current-thread tool may be absent; model allowlist may expose only Sol/Terra; custom role metadata may disagree with the host | Enumerate the current thread; verify exact schema, fresh semantics, receipt, and host-observed Luna/max; never borrow sibling evidence |
 | Desktop task | Uses the host's explicit Luna task surface; avoids Sol's nested local MCP broker; visible and easy for a user to inspect | Creates a user-owned task; projectless mode cannot touch a repo; project/local mode may have host sandbox limits; effective model telemetry may be absent | Require explicit approval; call `list_projects` first; prefer a fresh worktree; retain `threadId` + `hostId`; stop at `TRANSPORT_VERIFIED` when effective identity is not observable |
-| MCP broker | Stable Sol-owned schema; allowed-root validation; async receipt/polling; useful when native and Desktop surfaces are unavailable | Starts a local app-server; Windows sandbox setup can fail before a command runs; caller deadline can hide a pending job; it is not native evidence | Use only as priority 3; handshake synchronously, implementation asynchronously; never widen ACLs from Sol; poll the same job and do not duplicate packets |
+| MCP broker | Stable Sol-owned schema; allowed-root validation; async receipt/polling; useful when native is unavailable | Starts a local app-server; Windows sandbox setup can fail before a command runs; caller deadline can hide a pending job; it is not native evidence | Use as priority 2; handshake synchronously, implementation asynchronously; pin runtime path/hash; never widen ACLs from Sol; poll the same job and do not duplicate packets |
 
 ### Problem and solution catalog
 
@@ -193,7 +194,8 @@ every route. The following matrix must be read before selecting a surface:
 the same packet.
 
 **Solution:** classify the result as thread-bound surface mismatch, record the
-exact schema, try the approved Desktop task route, then MCP priority 3. Keep
+exact schema, try MCP priority 2, and consider the approved Desktop task route
+only as priority 3 after MCP fails. Keep
 `LUNA_MAX` and `Fallback: BLOCKED` unchanged unless the plan explicitly allows
 a compatibility lane.
 
@@ -292,7 +294,7 @@ action from local implementation. Before pushing a branch or opening a PR:
 4. Run `git diff --check`, `protocol-contract.ps1`, `privacy-contract.ps1`, and
    `broker-contract.ps1` from the source checkout.
 5. Synchronize the runtime copy only after the source commit is reviewed, then
-   verify the per-file SHA-256 set.
+   verify the per-file SHA-256 set with `tests/runtime-sync-contract.ps1`.
 6. Review the license/attribution obligations of every linked project before
    copying code, role files, or assets. This repository currently links and
    paraphrases; it does not vendor their implementation.
@@ -303,12 +305,17 @@ action from local implementation. Before pushing a branch or opening a PR:
    as a public fixture.
 9. Push only the intended branch. Do not force-push or rewrite shared history
    without explicit authorization.
+10. Select and add a repository license before public distribution. No license
+    is inferred from the linked projects; until the owner chooses one, treat
+    publication as legally incomplete and do not present the repository as
+    reusable under an assumed MIT/Apache/GPL grant.
 
 ### Public-release acceptance
 
 The release is ready for review only when the source worktree is clean, the
 route order is documented in both languages, all external references are listed
 here, tests pass on source and runtime, and the final evidence states what is
-still host-dependent. A green documentation test does not prove that the
+still host-dependent, and an owner-selected `LICENSE` file is present. A green
+documentation test does not prove that the
 current host can execute Luna; it proves that the controller will fail safely
 and tell the caller what to do.

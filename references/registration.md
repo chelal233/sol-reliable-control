@@ -43,12 +43,13 @@ when the current thread exposes an explicit, verifiable native contract. If
 only `collaboration.spawn_agent` is visible, inspect it independently in Step
 2B; the older schema must not masquerade as canonical native v1. If its schema
 or Luna/max matrix does not match, or native preflight cannot obtain the
-required host evidence, record that failure and proceed to the conditional
-Desktop task path, then the priority-3 MCP path in Step 2D when Desktop is not
-eligible. If a sibling thread can see the native Luna surface but this
-thread cannot, record `THREAD_SURFACE_NOT_VISIBLE`; surface migration/rebind is
-required only if the explicit current-thread priority-3 `HOST_MANAGED` broker
-is also unavailable. Never call the sibling's agent id from this thread.
+required host evidence, record that failure and proceed to the priority-2 MCP
+path below. Consider the conditional Desktop task path only as priority 3
+after MCP is unavailable or fails and user-owned-task approval is present. If a
+sibling thread can see the native Luna surface but this thread cannot, record
+`THREAD_SURFACE_NOT_VISIBLE`; surface migration/rebind is required only if MCP
+is also unavailable and the Desktop route is not eligible. Never call the
+sibling's agent id from this thread.
 
 ## Step 2A: use the canonical native wrapper
 
@@ -138,17 +139,22 @@ Do not infer from this alternate schema that the host has no Luna capability
 when `multi_agent_v1__spawn_agent` is visible on the same Desktop host. Schema
 visibility is thread-bound and must be recorded in the capability snapshot.
 
-## Step 2C: explicit Desktop Luna task lane
+## Priority 3 adapter: explicit Desktop Luna task lane
+
+This section is intentionally shown before the broker details because it
+documents the separate host-owned API. Policy order is still Native → MCP
+(priority 2) → Desktop (priority 3); do not invoke this section before the MCP
+preflight unless the caller has selected the explicit override.
 
 Some clients expose Luna through a user-visible app task rather than a native
-worker surface. The [desktop task lane](desktop-task-lane.md) is the conditional priority-2
+worker surface. The [desktop task lane](desktop-task-lane.md) is the conditional priority-3
 route when the caller explicitly accepts a visible user-owned task and forbids
 Sol from touching Windows ACLs or starting a local broker. It is not an
 enablement registration step. The plan must contain:
 
 ```text
 Surface: USER_VISIBLE_TASK
-Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP
+Dispatch priority: NATIVE_FIRST_THEN_MCP_THEN_DESKTOP
 User-owned task: ALLOWED
 User approval: GRANTED
 Requested model/effort: gpt-5.6-luna / max
@@ -179,23 +185,25 @@ self-report is insufficient. If the task reports `PROCESS_CREATION_DENIED` or
 `WINDOWS_SANDBOX_ACL_FAILED`, stop with an execution blocker; do not request
 or perform broad ACL/token changes.
 
-## Step 2D: register the Sol Luna MCP broker
+## Priority 2 adapter: register the Sol Luna MCP broker
 
-Use this explicit priority-3 `HOST_MANAGED` adapter only when the current
-Desktop thread does not expose a qualifying native worker surface, the native
-schema/model mismatches Luna/max, native preflight cannot obtain the required
-host evidence, or the eligible Desktop task was skipped or failed. Install the
+Use this explicit priority-2 `HOST_MANAGED` adapter when the current Desktop
+thread does not expose a qualifying native worker surface, the native schema/model
+mismatches Luna/max, or native preflight cannot obtain the required host evidence.
+Install the
 skill first, then add the server to the host's
 `config.toml`:
 
 ```toml
 [mcp_servers.sol_luna_broker]
-command = "pwsh"
+command = "<trusted-pwsh-path>"
 args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "<CODEX_HOME>\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
 enabled = true
 
 [mcp_servers.sol_luna_broker.env]
-SOL_LUNA_ALLOWED_ROOTS = "<approved-worktree-root>;<sol-reliable-control-worktree-root>;<sol-reliable-control-root>"
+SOL_LUNA_ALLOWED_ROOTS = "<approved-phase-worktree>"
+SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable>"
+SOL_LUNA_RUNTIME_SHA256 = "<64-hex-approved-sha256>"
 ```
 
 Replace every angle-bracket placeholder with an approved path before saving.
@@ -316,9 +324,9 @@ this bounded sequence and report each transition:
 
 | Attempt | Caller action | Required evidence | If it fails |
 | --- | --- | --- | --- |
-| 1 | Native handshake-only probe on the current thread | native schema, fresh receipt, Luna/max host identity | record native failure and evaluate Desktop task permission |
-| 2 | Approved Desktop task handshake through `codex_app__create_thread` | ready task receipt, fresh/history facts, host launch evidence | record Desktop failure and continue to MCP |
-| 3 | MCP `sol_luna_exec(handshake_only=true)` | host launch record and execution status | issue host remediation request |
+| 1 | Native handshake-only probe on the current thread | native schema, fresh receipt, Luna/max host identity | record native failure and continue to MCP |
+| 2 | MCP `sol_luna_exec(handshake_only=true)` | host launch record and execution status | evaluate the explicitly approved Desktop task gate |
+| 3 | Approved Desktop task handshake through `codex_app__create_thread` | ready task receipt, fresh/history facts, host launch evidence | issue host remediation request |
 | 4 | User/host owner approves the smallest official registry or sandbox repair, then reload/restart | approval plus setup/reload record | remain `HOST_REMEDIATION_REQUIRED` |
 | 5 | New minimal read-only PowerShell probe | `PROCESS_START=YES`, `EXECUTION=COMPLETED` | remain `BLOCKED`; do not send implementation |
 
@@ -356,7 +364,7 @@ following sequence:
 2. Re-enumerate all worker tools in the current controller thread; a full
    Desktop restart alone does not prove that the existing thread was rebound.
 3. If the canonical wrapper is still absent, record the native failure and use
-   the priority-3 broker when it passes preflight; otherwise start a fresh
+    the priority-2 broker when it passes preflight; otherwise start a fresh
    controller thread or request explicit surface migration/rebind.
 4. Read the selected surface metadata again and record the model/effort list.
 5. Do not dispatch until `gpt-5.6-luna / max` is present on that surface.

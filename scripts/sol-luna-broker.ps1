@@ -44,7 +44,46 @@ function Protect-OutputText {
     }
     $safe = [regex]::Replace($safe, '(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+', '$1 <redacted>')
     $safe = [regex]::Replace($safe, '(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|secret)\b\s*[:=]\s*["'']?[^\s,;]+["'']?', '$1=<redacted>')
+    $safe = [regex]::Replace($safe, '(?i)\b(?:sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b', '<redacted>')
+    $safe = [regex]::Replace($safe, '(?i)\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b', '<redacted>')
+    $safe = [regex]::Replace($safe, '(?ms)-----BEGIN\s+(?:RSA|OPENSSH|EC|DSA)?\s*PRIVATE KEY-----.*?-----END\s+(?:RSA|OPENSSH|EC|DSA)?\s*PRIVATE KEY-----', '<redacted>')
+    $safe = [regex]::Replace($safe, '(?i)\\\\[^\s\\/]+\\[^\r\n\s]+', '<path>')
+    $safe = [regex]::Replace($safe, '(?i)\b[A-Z]:\\(?!Users\\)[^\r\n\s,;]+', '<path>')
     return $safe
+}
+
+function Get-ConfiguredInteger {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Name,
+        [Parameter(Mandatory = $true)] [int] $Default,
+        [Parameter(Mandatory = $true)] [int] $Minimum,
+        [Parameter(Mandatory = $true)] [int] $Maximum
+    )
+
+    $value = [string]$Default
+    $property = [System.Environment]::GetEnvironmentVariable($Name)
+    if ($property) { $value = $property }
+    $parsed = 0
+    if (-not [int]::TryParse($value, [ref]$parsed) -or $parsed -lt $Minimum -or $parsed -gt $Maximum) {
+        throw "$Name must be an integer from $Minimum to $Maximum"
+    }
+    return $parsed
+}
+
+function Get-MaxOutputBytes { return (Get-ConfiguredInteger -Name 'SOL_LUNA_MAX_OUTPUT_BYTES' -Default 1048576 -Minimum 4096 -Maximum 104857600) }
+function Get-MaxEvents { return (Get-ConfiguredInteger -Name 'SOL_LUNA_MAX_EVENTS' -Default 20000 -Minimum 100 -Maximum 1000000) }
+function Get-MaxAsyncJobs { return (Get-ConfiguredInteger -Name 'SOL_LUNA_MAX_ASYNC_JOBS' -Default 4 -Minimum 1 -Maximum 64) }
+function Get-JobRetentionSeconds { return (Get-ConfiguredInteger -Name 'SOL_LUNA_JOB_RETENTION_SECONDS' -Default 86400 -Minimum 300 -Maximum 2592000) }
+
+function Get-TextByteCount {
+    param([AllowNull()] [AllowEmptyString()] [string] $Text)
+    if ($null -eq $Text) { return 0 }
+    return [System.Text.Encoding]::UTF8.GetByteCount($Text)
+}
+
+function Test-TextLimit {
+    param([AllowNull()] [AllowEmptyString()] [string] $Text)
+    return ((Get-TextByteCount $Text) -le (Get-MaxOutputBytes))
 }
 
 function Send-JsonLine {
@@ -120,27 +159,30 @@ function Get-IntegerProperty {
 }
 
 function Get-RuntimePath {
-    if ($env:SOL_LUNA_RUNTIME_PATH) {
-        if (-not (Test-Path -LiteralPath $env:SOL_LUNA_RUNTIME_PATH -PathType Leaf)) {
-            throw "SOL_LUNA_RUNTIME_PATH is not a file: $($env:SOL_LUNA_RUNTIME_PATH)"
-        }
-        return (Resolve-Path -LiteralPath $env:SOL_LUNA_RUNTIME_PATH).Path
+    if (-not $env:SOL_LUNA_RUNTIME_PATH) {
+        throw 'SOL_LUNA_RUNTIME_PATH must be configured explicitly; implicit runtime discovery is disabled'
     }
-
-    $root = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin'
-    if (-not (Test-Path -LiteralPath $root -PathType Container)) {
-        throw "Codex runtime root is missing: $root"
+    if (-not (Test-Path -LiteralPath $env:SOL_LUNA_RUNTIME_PATH -PathType Leaf)) {
+        throw 'SOL_LUNA_RUNTIME_PATH is not a readable file'
     }
+    $resolved = (Resolve-Path -LiteralPath $env:SOL_LUNA_RUNTIME_PATH).Path
+    if (-not (Test-NoReparsePoints -Path $resolved)) {
+        throw 'Configured Codex runtime contains a reparse point'
+    }
+    return $resolved
+}
 
-    $found = Get-ChildItem -LiteralPath $root -Directory |
-        ForEach-Object { Join-Path $_.FullName 'codex.exe' } |
-        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-        ForEach-Object { Get-Item -LiteralPath $_ } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
+function Test-NoReparsePoints {
+    param([Parameter(Mandatory = $true)] [string] $Path)
 
-    if (-not $found) { throw "No Codex runtime was found under $root" }
-    return $found.FullName
+    $current = Get-Item -LiteralPath $Path -Force
+    while ($current) {
+        if (($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
+        $parent = $current.Parent
+        if ($null -eq $parent -or $parent.FullName -eq $current.FullName) { break }
+        $current = $parent
+    }
+    return $true
 }
 
 function Get-AllowedRoots {
@@ -151,9 +193,13 @@ function Get-AllowedRoots {
 
     $roots = @($raw -split ';' | Where-Object { $_ } | ForEach-Object {
         if (-not (Test-Path -LiteralPath $_ -PathType Container)) {
-            throw "Configured broker root does not exist: $_"
+            throw 'Configured broker root does not exist'
         }
-        (Resolve-Path -LiteralPath $_).Path.TrimEnd('\')
+        $resolvedRoot = (Resolve-Path -LiteralPath $_).Path.TrimEnd('\')
+        if (-not (Test-NoReparsePoints -Path $resolvedRoot)) {
+            throw 'Configured broker root contains a reparse point'
+        }
+        $resolvedRoot
     })
     if ($roots.Count -eq 0) { throw 'SOL_LUNA_ALLOWED_ROOTS resolved to no directories' }
     return $roots
@@ -163,15 +209,18 @@ function Resolve-AllowedWorkdir {
     param([Parameter(Mandatory = $true)] [string] $Workdir)
 
     if (-not (Test-Path -LiteralPath $Workdir -PathType Container)) {
-        throw "Workdir does not exist: $Workdir"
+        throw 'Workdir does not exist'
     }
     $resolved = (Resolve-Path -LiteralPath $Workdir).Path.TrimEnd('\')
+    if (-not (Test-NoReparsePoints -Path $resolved)) {
+        throw 'Workdir contains a reparse point'
+    }
     $matches = @(Get-AllowedRoots | Where-Object {
         $resolved.Equals($_, [StringComparison]::OrdinalIgnoreCase) -or
         $resolved.StartsWith($_ + '\', [StringComparison]::OrdinalIgnoreCase)
     })
     if ($matches.Count -eq 0) {
-        throw "Workdir is outside SOL_LUNA_ALLOWED_ROOTS: $resolved"
+        throw 'Workdir is outside SOL_LUNA_ALLOWED_ROOTS'
     }
     return $resolved
 }
@@ -188,12 +237,26 @@ function Get-TimeoutSeconds {
     return $value
 }
 
+function Get-VerifiedRuntime {
+    $path = Get-RuntimePath
+    $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToUpperInvariant()
+    $expected = [string]$env:SOL_LUNA_RUNTIME_SHA256
+    if (-not $expected -or $expected -notmatch '^[A-Fa-f0-9]{64}$') {
+        throw 'SOL_LUNA_RUNTIME_SHA256 must be configured with the approved Codex executable SHA-256'
+    }
+    if ($hash -ne $expected.ToUpperInvariant()) {
+        throw 'SOL_LUNA_RUNTIME_HASH_MISMATCH'
+    }
+    return [ordered]@{ path = $path; sha256 = $hash }
+}
+
 function Invoke-CodexWorker {
     param(
         [Parameter(Mandatory = $true)] [string] $RuntimePath,
         [Parameter(Mandatory = $true)] [string] $Workdir,
         [Parameter(Mandatory = $true)] [string] $Prompt,
-        [Parameter(Mandatory = $true)] [ValidateSet('read-only', 'workspace-write')] [string] $Sandbox
+        [Parameter(Mandatory = $true)] [ValidateSet('read-only', 'workspace-write')] [string] $Sandbox,
+        [bool] $HandshakeOnly = $false
     )
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -232,14 +295,26 @@ function Invoke-CodexWorker {
             timed_out = $true
             stdout = $stdoutTask.Result
             stderr = $stderrTask.Result
+            activity_violation = $null
+            output_limited = $false
+            read_failure_kind = 'TIMEOUT'
         }
     }
+
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
+    $events = ConvertFrom-CodexEvents $stdout
+    $activityViolation = if ($HandshakeOnly) { Get-AppServerActivityViolation -Events $events } else { $null }
+    $outputLimited = -not (Test-TextLimit $stdout) -or -not (Test-TextLimit $stderr)
 
     return [ordered]@{
         exit_code = $process.ExitCode
         timed_out = $false
-        stdout = $stdoutTask.Result
-        stderr = $stderrTask.Result
+        stdout = $stdout
+        stderr = $stderr
+        activity_violation = $activityViolation
+        output_limited = $outputLimited
+        read_failure_kind = $null
     }
 }
 
@@ -260,10 +335,14 @@ function Read-AppServerJson {
     )
 
     $task = $Process.StandardOutput.ReadLineAsync()
-    if (-not $task.Wait($TimeoutMs)) { return $null }
+    if (-not $task.Wait($TimeoutMs)) { return [ordered]@{ kind = 'TIMEOUT'; value = $null; raw = $null } }
     $line = $task.Result
-    if ($null -eq $line) { return $null }
-    try { return ($line | ConvertFrom-Json) } catch { return $null }
+    if ($null -eq $line) { return [ordered]@{ kind = 'EOF'; value = $null; raw = $null } }
+    try {
+        return [ordered]@{ kind = 'MESSAGE'; value = ($line | ConvertFrom-Json); raw = $line }
+    } catch {
+        return [ordered]@{ kind = 'PARSE_ERROR'; value = $null; raw = (Protect-OutputText $line) }
+    }
 }
 
 function Stop-AppServerProcess {
@@ -314,6 +393,72 @@ function Get-AppServerMessageText {
     return ($texts -join "`n")
 }
 
+function Get-NullableBoolProperty {
+    param(
+        [AllowNull()] [object] $Object,
+        [Parameter(Mandatory = $true)] [string] $Name
+    )
+
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if (-not $property -or $null -eq $property.Value) { return $null }
+    $parsed = $false
+    if ([bool]::TryParse([string]$property.Value, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+function Get-FirstPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)] [object[]] $Objects,
+        [Parameter(Mandatory = $true)] [string[]] $Names
+    )
+
+    foreach ($object in $Objects) {
+        if ($null -eq $object) { continue }
+        foreach ($name in $Names) {
+            $property = $object.PSObject.Properties[$name]
+            if ($property -and $null -ne $property.Value) { return $property.Value }
+        }
+    }
+    return $null
+}
+
+function Get-NullableBoolAny {
+    param(
+        [Parameter(Mandatory = $true)] [object[]] $Objects,
+        [Parameter(Mandatory = $true)] [string[]] $Names
+    )
+
+    $value = Get-FirstPropertyValue -Objects $Objects -Names $Names
+    if ($null -eq $value) { return $null }
+    $parsed = $false
+    if ([bool]::TryParse([string]$value, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+function Get-AppServerActivityViolation {
+    param([Parameter(Mandatory = $true)] [object[]] $Events)
+
+    foreach ($event in $Events) {
+        $method = Get-TextProperty $event 'method'
+        if ($method -match '(?i)(command|file|mcp|tool|shell|terminal|patch|computer)') {
+            return "host activity event: $method"
+        }
+        $itemProperty = $event.PSObject.Properties['item']
+        if (-not $itemProperty) {
+            $paramsProperty = $event.PSObject.Properties['params']
+            if ($paramsProperty) { $itemProperty = $paramsProperty.Value.PSObject.Properties['item'] }
+        }
+        if ($itemProperty) {
+            $itemType = Get-TextProperty $itemProperty.Value 'type'
+            if ($itemType -match '(?i)(command|file|mcp|tool|shell|terminal|patch|computer)') {
+                return "host activity item: $itemType"
+            }
+        }
+    }
+    return $null
+}
+
 function Get-AppServerExecutionFailure {
     param(
         [AllowNull()] [AllowEmptyString()] [string] $Text,
@@ -327,7 +472,7 @@ function Get-AppServerExecutionFailure {
             blocker = 'Windows sandbox ACL setup failed with access denied'
         }
     }
-    if ($evidence -match '(?i)(CreateProcessAsUserW\s+failed\s*:\s*5\b|Windows sandbox denied process creation|command could not execute)') {
+    if ($evidence -match '(?i)(CreateProcessAsUserW\s+failed\s*:\s*5\b|Windows sandbox denied process creation|command could not execute|command blocked|PROCESS_CREATION_DENIED)') {
         return [ordered]@{
             code = 'PROCESS_CREATION_DENIED'
             blocker = 'Windows sandbox denied process creation'
@@ -341,7 +486,8 @@ function Invoke-AppServerWorker {
         [Parameter(Mandatory = $true)] [string] $RuntimePath,
         [Parameter(Mandatory = $true)] [string] $Workdir,
         [Parameter(Mandatory = $true)] [string] $Prompt,
-        [Parameter(Mandatory = $true)] [ValidateSet('read-only', 'workspace-write')] [string] $Sandbox
+        [Parameter(Mandatory = $true)] [ValidateSet('read-only', 'workspace-write')] [string] $Sandbox,
+        [bool] $HandshakeOnly = $false
     )
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -352,6 +498,9 @@ function Invoke-AppServerWorker {
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    # app-server exposes strict-config but not the CLI-only ignore-user-config
+    # or ignore-rules flags. Keep its request policy
+    # explicit in thread/start instead of sending unsupported options.
     foreach ($argument in @('app-server', '--listen', 'stdio://', '--strict-config')) {
         $psi.ArgumentList.Add([string]$argument)
     }
@@ -360,10 +509,9 @@ function Invoke-AppServerWorker {
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $psi
-    if (-not $process.Start()) { throw "Failed to start Codex app-server: $RuntimePath" }
+    if (-not $process.Start()) { throw 'Failed to start Codex app-server' }
     $stderrTask = $process.StandardError.ReadToEndAsync()
     $events = [System.Collections.Generic.List[object]]::new()
-    $rawLines = [System.Collections.Generic.List[string]]::new()
     $timeoutMs = [int64](Get-TimeoutSeconds) * 1000
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     $nextId = 1
@@ -379,18 +527,25 @@ function Invoke-AppServerWorker {
     }
     $nextId++
     Send-AppServerJson -Process $process -Value $initialize
-    $initResponse = Read-AppServerJson -Process $process -TimeoutMs ([Math]::Min(30000, [int]$timeoutMs))
+    $initRead = Read-AppServerJson -Process $process -TimeoutMs ([Math]::Min(30000, [int]$timeoutMs))
+    $initResponse = $initRead.value
     $initError = if ($initResponse) { $initResponse.PSObject.Properties['error'] } else { $null }
-    if ($null -eq $initResponse -or $null -ne $initError) {
+    if ($initRead.kind -ne 'MESSAGE' -or $null -eq $initResponse -or $null -ne $initError) {
         Stop-AppServerProcess $process
         $stderr = $stderrTask.Result
-        $executionFailure = Get-AppServerExecutionFailure -Text '' -Stderr $stderr
+        $executionFailure = Get-AppServerExecutionFailure -Text $initRead.raw -Stderr $stderr
         return [ordered]@{
             exit_code = 1; timed_out = $false; events = @(); raw_lines = @(); thread_id = $null
             host_model = $null; host_effort = $null; host_launch_record = $false; rerouted = @()
+            host_fresh = $null; host_history_excluded = $null; host_cwd = $null
+            host_sandbox = $null; host_approval = $null; host_fallback_allowed = $null
+            context_verified = $false; policy_verified = $false
             execution_status = 'BLOCKED'
-            execution_blocker_code = if ($executionFailure) { $executionFailure.code } else { 'APP_SERVER_INITIALIZE_FAILED' }
-            execution_blocker = if ($executionFailure) { $executionFailure.blocker } else { 'Codex app-server initialization failed' }
+            execution_blocker_code = if ($executionFailure) { $executionFailure.code } elseif ($initRead.kind -eq 'TIMEOUT') { 'APP_SERVER_INITIALIZE_TIMEOUT' } elseif ($initRead.kind -eq 'PARSE_ERROR') { 'APP_SERVER_INITIALIZE_PARSE_ERROR' } else { 'APP_SERVER_INITIALIZE_FAILED' }
+            execution_blocker = if ($executionFailure) { $executionFailure.blocker } else { 'Codex app-server initialization did not return a valid response' }
+            read_failure_kind = $initRead.kind
+            activity_violation = $null
+            output_limited = $false
             text = ''; stderr = $stderr
         }
     }
@@ -416,13 +571,16 @@ function Invoke-AppServerWorker {
     })
 
     $startResponse = $null
+    $readFailureKind = $null
     while ($null -eq $startResponse -and -not $process.HasExited) {
         $remaining = [int][Math]::Max(1, $timeoutMs - $watch.ElapsedMilliseconds)
         if ($remaining -le 0) { break }
-        $event = Read-AppServerJson -Process $process -TimeoutMs $remaining
-        if ($null -eq $event) { break }
+        $read = Read-AppServerJson -Process $process -TimeoutMs $remaining
+        if ($read.kind -ne 'MESSAGE') { $readFailureKind = $read.kind; break }
+        $event = $read.value
+        if ($null -eq $event) { $readFailureKind = 'PARSE_ERROR'; break }
         $events.Add($event)
-        $rawLines.Add(($event | ConvertTo-Json -Compress -Depth 40))
+        if ($events.Count -gt (Get-MaxEvents)) { $readFailureKind = 'EVENT_LIMIT'; break }
         $idProperty = $event.PSObject.Properties['id']
         if ($idProperty -and [string]$idProperty.Value -eq [string]$threadRequestId) { $startResponse = $event }
     }
@@ -431,15 +589,58 @@ function Invoke-AppServerWorker {
     $hostModel = $null
     $hostEffort = $null
     $launchRecord = $false
+    $hostFresh = $null
+    $hostHistoryExcluded = $null
+    $hostCwd = $null
+    $hostSandbox = $null
+    $hostApproval = $null
+    $hostFallbackAllowed = $null
     $startError = if ($startResponse) { $startResponse.PSObject.Properties['error'] } else { $null }
     if ($startResponse -and $null -eq $startError -and $startResponse.result) {
-        $threadId = Get-TextProperty $startResponse.result.thread 'id'
-        $hostModel = Normalize-ObservedValue (Get-TextProperty $startResponse.result 'model')
-        $hostEffort = Normalize-ObservedValue (Get-TextProperty $startResponse.result 'reasoningEffort')
+        $threadResult = if ($startResponse.result.PSObject.Properties['thread']) { $startResponse.result.thread } else { $null }
+        $threadId = Get-TextProperty $threadResult 'id'
+        if (-not $threadId) { $threadId = Get-TextProperty $startResponse.result 'threadId' }
+        $hostObjects = @($startResponse.result, $threadResult)
+        $hostModel = Normalize-ObservedValue ([string](Get-FirstPropertyValue -Objects $hostObjects -Names @('model', 'effectiveModel')))
+        $hostEffort = Normalize-ObservedValue ([string](Get-FirstPropertyValue -Objects $hostObjects -Names @('reasoningEffort', 'effort', 'effectiveEffort')))
+        $hostFresh = Get-NullableBoolAny -Objects $hostObjects -Names @('ephemeral', 'fresh', 'freshContext')
+        $hostHistoryExcluded = Get-NullableBoolAny -Objects $hostObjects -Names @('historyExcluded', 'controllerHistoryExcluded')
+        $hostCwd = [string](Get-FirstPropertyValue -Objects $hostObjects -Names @('cwd', 'workingDirectory'))
+        $hostSandbox = [string](Get-FirstPropertyValue -Objects $hostObjects -Names @('sandbox', 'sandboxMode'))
+        $hostApproval = [string](Get-FirstPropertyValue -Objects $hostObjects -Names @('approvalPolicy', 'approval'))
+        $hostFallbackAllowed = Get-NullableBoolAny -Objects $hostObjects -Names @('allowProviderModelFallback')
         $launchRecord = $threadId -and $hostModel -and $hostEffort -and
             $hostModel.ToLowerInvariant() -eq $script:FixedModel -and
             $hostEffort.ToLowerInvariant() -eq $script:FixedEffort
     }
+    # Some app-server versions put launch facts on a notification instead of
+    # the thread/start result. Accept only host-emitted fields from this same
+    # task-bound stream; never infer them from the worker text.
+    if (-not $hostModel -or -not $hostEffort -or $null -eq $hostFresh -or $null -eq $hostHistoryExcluded) {
+        foreach ($candidate in @($events)) {
+            $paramsValue = if ($candidate.PSObject.Properties['params']) { $candidate.params } else { $null }
+            $resultValue = if ($candidate.PSObject.Properties['result']) { $candidate.result } else { $null }
+            $threadValue = if ($paramsValue -and $paramsValue.PSObject.Properties['thread']) { $paramsValue.thread } else { $null }
+            $objects = @($candidate, $paramsValue, $resultValue, $threadValue)
+            if (-not $threadId) { $threadId = Get-TextProperty $threadValue 'id' }
+            if (-not $hostModel) { $hostModel = Normalize-ObservedValue ([string](Get-FirstPropertyValue -Objects $objects -Names @('model', 'effectiveModel'))) }
+            if (-not $hostEffort) { $hostEffort = Normalize-ObservedValue ([string](Get-FirstPropertyValue -Objects $objects -Names @('reasoningEffort', 'effort', 'effectiveEffort'))) }
+            if ($null -eq $hostFresh) { $hostFresh = Get-NullableBoolAny -Objects $objects -Names @('ephemeral', 'fresh', 'freshContext') }
+            if ($null -eq $hostHistoryExcluded) { $hostHistoryExcluded = Get-NullableBoolAny -Objects $objects -Names @('historyExcluded', 'controllerHistoryExcluded') }
+            if (-not $hostCwd) { $hostCwd = [string](Get-FirstPropertyValue -Objects $objects -Names @('cwd', 'workingDirectory')) }
+            if (-not $hostSandbox) { $hostSandbox = [string](Get-FirstPropertyValue -Objects $objects -Names @('sandbox', 'sandboxMode')) }
+            if (-not $hostApproval) { $hostApproval = [string](Get-FirstPropertyValue -Objects $objects -Names @('approvalPolicy', 'approval')) }
+            if ($null -eq $hostFallbackAllowed) { $hostFallbackAllowed = Get-NullableBoolAny -Objects $objects -Names @('allowProviderModelFallback') }
+        }
+        $launchRecord = [bool]($threadId -and $hostModel -and $hostEffort -and
+            $hostModel.ToLowerInvariant() -eq $script:FixedModel -and
+            $hostEffort.ToLowerInvariant() -eq $script:FixedEffort)
+    }
+    $contextVerified = $hostFresh -eq $true -and $hostHistoryExcluded -eq $true
+    $policyVerified = $hostCwd -and
+        $hostCwd.TrimEnd('\').Equals($Workdir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase) -and
+        $hostSandbox -eq $Sandbox -and $hostApproval -eq 'never' -and
+        $hostFallbackAllowed -eq $false
 
     $turnCompletedEvent = $null
     if ($threadId -and -not $process.HasExited -and $watch.ElapsedMilliseconds -lt $timeoutMs) {
@@ -460,10 +661,12 @@ function Invoke-AppServerWorker {
         while (-not $turnCompleted -and -not $process.HasExited) {
             $remaining = [int][Math]::Max(1, $timeoutMs - $watch.ElapsedMilliseconds)
             if ($remaining -le 0) { break }
-            $event = Read-AppServerJson -Process $process -TimeoutMs $remaining
-            if ($null -eq $event) { break }
+            $read = Read-AppServerJson -Process $process -TimeoutMs $remaining
+            if ($read.kind -ne 'MESSAGE') { $readFailureKind = $read.kind; break }
+            $event = $read.value
+            if ($null -eq $event) { $readFailureKind = 'PARSE_ERROR'; break }
             $events.Add($event)
-            $rawLines.Add(($event | ConvertTo-Json -Compress -Depth 40))
+            if ($events.Count -gt (Get-MaxEvents)) { $readFailureKind = 'EVENT_LIMIT'; break }
             if ((Get-TextProperty $event 'method') -eq 'turn/completed') {
                 $turnCompletedEvent = $event
                 $turnCompleted = $true
@@ -488,6 +691,7 @@ function Invoke-AppServerWorker {
             }
         }
     }
+    $activityViolation = if ($HandshakeOnly) { Get-AppServerActivityViolation -Events $events.ToArray() } else { $null }
     $executionFailure = Get-AppServerExecutionFailure -Text $text -Stderr $stderr
     $executionStatus = 'BLOCKED'
     $executionBlockerCode = $null
@@ -498,6 +702,18 @@ function Invoke-AppServerWorker {
     } elseif ($executionFailure) {
         $executionBlockerCode = $executionFailure.code
         $executionBlocker = $executionFailure.blocker
+    } elseif (-not (Test-TextLimit $text) -or -not (Test-TextLimit $stderr)) {
+        $executionBlockerCode = 'OUTPUT_LIMIT_EXCEEDED'
+        $executionBlocker = 'Codex app-server output exceeded the broker limit'
+    } elseif ($activityViolation) {
+        $executionBlockerCode = 'HANDSHAKE_ACTIVITY_DETECTED'
+        $executionBlocker = 'Handshake-only worker emitted a command, file, tool, or shell activity event'
+    } elseif ($readFailureKind -eq 'EVENT_LIMIT') {
+        $executionBlockerCode = 'EVENT_LIMIT_EXCEEDED'
+        $executionBlocker = 'Codex app-server emitted too many events'
+    } elseif ($readFailureKind -and $readFailureKind -ne 'EOF') {
+        $executionBlockerCode = "APP_SERVER_$readFailureKind"
+        $executionBlocker = 'Codex app-server stream ended without a complete task result'
     } elseif ($turnError) {
         $executionBlockerCode = 'TURN_ERROR'
         $executionBlocker = "Codex turn failed: $turnError"
@@ -512,12 +728,23 @@ function Invoke-AppServerWorker {
         exit_code = $exitCode
         timed_out = $timedOut
         events = $events.ToArray()
-        raw_lines = $rawLines.ToArray()
+        raw_lines = @()
         thread_id = $threadId
         host_model = $hostModel
         host_effort = $hostEffort
         host_launch_record = [bool]$launchRecord
+        host_fresh = $hostFresh
+        host_history_excluded = $hostHistoryExcluded
+        host_cwd = $hostCwd
+        host_sandbox = $hostSandbox
+        host_approval = $hostApproval
+        host_fallback_allowed = $hostFallbackAllowed
+        context_verified = [bool]$contextVerified
+        policy_verified = [bool]$policyVerified
         rerouted = $rerouted
+        activity_violation = $activityViolation
+        output_limited = (-not (Test-TextLimit $text) -or -not (Test-TextLimit $stderr))
+        read_failure_kind = $readFailureKind
         turn_completed = [bool]$turnCompletedEvent
         turn_status = $turnStatus
         turn_error = $turnError
@@ -645,7 +872,26 @@ function Get-JobRoot {
     if (-not (Test-Path -LiteralPath $root -PathType Container)) {
         [System.IO.Directory]::CreateDirectory($root) | Out-Null
     }
-    return (Resolve-Path -LiteralPath $root).Path.TrimEnd('\')
+    $resolved = (Resolve-Path -LiteralPath $root).Path.TrimEnd('\')
+    if (-not (Test-NoReparsePoints -Path $resolved)) { throw 'SOL_LUNA_JOB_ROOT contains a reparse point' }
+    return $resolved
+}
+
+function Prune-AsyncJobs {
+    param([Parameter(Mandatory = $true)] [string] $Root)
+
+    $now = [DateTime]::UtcNow
+    $retention = [TimeSpan]::FromSeconds((Get-JobRetentionSeconds))
+    foreach ($entry in @($script:AsyncChildren.GetEnumerator())) {
+        $child = $entry.Value.process
+        if ($child.HasExited) { $script:AsyncChildren.Remove([string]$entry.Key) }
+    }
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        if ($file.BaseName -notmatch '^[a-f0-9]{32}$') { continue }
+        if (($now - $file.LastWriteTimeUtc) -gt $retention) {
+            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Write-JobStateAtomic {
@@ -674,6 +920,13 @@ function Start-AsyncLunaJob {
     $taskId = Get-TextProperty $Arguments 'task_id'
     $jobId = [Guid]::NewGuid().ToString('N')
     $jobRoot = Get-JobRoot
+    Prune-AsyncJobs -Root $jobRoot
+    $activeJobs = @(
+        Get-ChildItem -LiteralPath $jobRoot -Filter '*.json' -File -ErrorAction SilentlyContinue |
+            ForEach-Object { Read-JobState -Path $_.FullName } |
+            Where-Object { $_ -and [string]$_.status -in @('QUEUED', 'RUNNING') }
+    )
+    if ($activeJobs.Count -ge (Get-MaxAsyncJobs)) { throw 'SOL_LUNA_MAX_ASYNC_JOBS has been reached' }
     $jobPath = Join-Path $jobRoot "$jobId.json"
     $receiptId = "sol-luna-broker:${taskId}:$jobId"
     $startedAt = [DateTime]::UtcNow.ToString('o')
@@ -699,7 +952,7 @@ function Start-AsyncLunaJob {
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    foreach ($argument in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:BrokerScriptPath, '-Worker')) {
+    foreach ($argument in @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:BrokerScriptPath, '-Worker')) {
         $psi.ArgumentList.Add([string]$argument)
     }
     $psi.Environment['SOL_LUNA_WORKER_JOB_FILE'] = $jobPath
@@ -741,8 +994,10 @@ function Start-AsyncLunaJob {
         submitted_at = $startedAt
         requested_model = $script:FixedModel
         requested_effort = $script:FixedEffort
-        fresh = $true
-        history = 'EXCLUDED'
+        fresh = $null
+        history = $null
+        context_verified = $false
+        policy_verified = $false
         identity = 'PENDING'
         execution_status = 'PENDING'
         execution_blocker_code = $null
@@ -804,8 +1059,10 @@ function Invoke-PollTool {
         job_id = $jobId
         submitted_at = [string]$state.submitted_at
         updated_at = [string]$state.updated_at
-        fresh = $true
-        history = 'EXCLUDED'
+        fresh = if ($completedPayload) { Get-NullableBoolProperty $completedPayload 'fresh' } else { $null }
+        history = if ($completedPayload -and (Get-TextProperty $completedPayload 'history')) { Get-TextProperty $completedPayload 'history' } else { $null }
+        context_verified = if ($completedPayload) { [bool](Get-BoolProperty $completedPayload 'context_verified' $false) } else { $false }
+        policy_verified = if ($completedPayload) { [bool](Get-BoolProperty $completedPayload 'policy_verified' $false) } else { $false }
         identity = if ($completedPayload) { [string]$completedPayload.identity } else { 'PENDING' }
         execution_status = if ($completedPayload) { Get-TextProperty $completedPayload 'execution_status' } elseif ($status -eq 'FAILED') { 'BLOCKED' } else { 'PENDING' }
         execution_blocker_code = if ($completedPayload) { Get-TextProperty $completedPayload 'execution_blocker_code' } elseif ($status -eq 'FAILED') { 'BROKER_WORKER_FAILED' } else { $null }
@@ -850,11 +1107,14 @@ function Invoke-LunaTool {
     }
 
     $workdir = Resolve-AllowedWorkdir $workdirInput
+    # Verify the pinned runtime before either synchronous execution or queueing
+    # an asynchronous child; a job receipt must never hide a hash mismatch.
+    $runtimeInfo = Get-VerifiedRuntime
     if ($executionMode -eq 'async') {
         return (Start-AsyncLunaJob -Arguments $Arguments)
     }
-    $runtime = Get-RuntimePath
-    $runtimeHash = (Get-FileHash -LiteralPath $runtime -Algorithm SHA256).Hash
+    $runtime = $runtimeInfo.path
+    $runtimeHash = $runtimeInfo.sha256
     $runtimeVersion = ((& $runtime --version 2>$null | Select-Object -First 1) -join '').Trim()
     $guard = @(
         'SOL LUNA BROKER CONTROL HEADER',
@@ -871,12 +1131,12 @@ function Invoke-LunaTool {
     ) -join "`n"
 
     if ($script:Transport -eq 'app-server') {
-        $run = Invoke-AppServerWorker -RuntimePath $runtime -Workdir $workdir -Prompt $guard -Sandbox $sandbox
+        $run = Invoke-AppServerWorker -RuntimePath $runtime -Workdir $workdir -Prompt $guard -Sandbox $sandbox -HandshakeOnly:$handshakeOnly
         $text = [string]$run.text
         $threadId = $run.thread_id
         $events = @($run.events)
     } else {
-        $run = Invoke-CodexWorker -RuntimePath $runtime -Workdir $workdir -Prompt $guard -Sandbox $sandbox
+        $run = Invoke-CodexWorker -RuntimePath $runtime -Workdir $workdir -Prompt $guard -Sandbox $sandbox -HandshakeOnly:$handshakeOnly
         $events = ConvertFrom-CodexEvents $run.stdout
         $text = Get-CodexMessageText $events
         $threadId = Get-ThreadId $events
@@ -893,6 +1153,14 @@ function Invoke-LunaTool {
 
     $hostObservedModel = $null
     $hostObservedEffort = $null
+    $hostFresh = $null
+    $hostHistoryExcluded = $null
+    $hostCwd = $null
+    $hostSandbox = $null
+    $hostApproval = $null
+    $hostFallbackAllowed = $null
+    $contextVerified = $false
+    $policyVerified = $false
     $identityProofKind = 'SELF_REPORT_ONLY'
     $receiptKind = 'BROKER_RUN_RECEIPT'
     $identity = 'UNVERIFIED'
@@ -900,9 +1168,28 @@ function Invoke-LunaTool {
     $executionStatus = if ($run.timed_out -or $run.exit_code -ne 0) { 'BLOCKED' } else { 'COMPLETED' }
     $executionBlockerCode = if ($run.timed_out) { 'BROKER_TIMEOUT' } elseif ($run.exit_code -ne 0) { 'RUNTIME_EXIT_NONZERO' } else { $null }
     $executionBlocker = if ($run.timed_out) { 'Codex runtime exceeded the broker timeout' } elseif ($run.exit_code -ne 0) { "Codex runtime exited with code $($run.exit_code)" } else { $null }
+    $executionFailure = Get-AppServerExecutionFailure -Text $text -Stderr ([string]$run.stderr)
+    if ($executionFailure -and $executionStatus -eq 'COMPLETED') {
+        $executionStatus = 'BLOCKED'
+        $executionBlockerCode = $executionFailure.code
+        $executionBlocker = $executionFailure.blocker
+    }
+    if ($run.output_limited) {
+        $executionStatus = 'BLOCKED'; $executionBlockerCode = 'OUTPUT_LIMIT_EXCEEDED'; $executionBlocker = 'Codex runtime output exceeded the broker limit'
+    } elseif ($run.activity_violation) {
+        $executionStatus = 'BLOCKED'; $executionBlockerCode = 'HANDSHAKE_ACTIVITY_DETECTED'; $executionBlocker = 'Handshake-only worker emitted a prohibited activity event'
+    }
     if ($script:Transport -eq 'app-server') {
         $hostObservedModel = $run.host_model
         $hostObservedEffort = $run.host_effort
+        $hostFresh = $run.host_fresh
+        $hostHistoryExcluded = $run.host_history_excluded
+        $hostCwd = $run.host_cwd
+        $hostSandbox = $run.host_sandbox
+        $hostApproval = $run.host_approval
+        $hostFallbackAllowed = $run.host_fallback_allowed
+        $contextVerified = [bool]$run.context_verified
+        $policyVerified = [bool]$run.policy_verified
         $identityProofKind = 'ROLE_MAPPING_AND_LAUNCH_RECORD'
         $receiptKind = 'HOST_LAUNCH_RECORD'
         $executionStatus = [string]$run.execution_status
@@ -913,10 +1200,10 @@ function Invoke-LunaTool {
             $identityBlocker = 'Host emitted model/rerouted during the Luna turn'
         } elseif (-not $run.host_launch_record) {
             $identity = 'FAIL'
-            $identityBlocker = "Host launch record did not match requested model/effort: model=$hostObservedModel effort=$hostObservedEffort"
+            $identityBlocker = 'Host launch record did not match the requested model and effort'
         } else {
             $identity = 'VERIFIED'
-            $identityBlocker = 'Fresh app-server launch record matched gpt-5.6-luna/max and no host reroute was observed'
+            $identityBlocker = 'Host launch record matched gpt-5.6-luna/max and no host reroute was observed'
         }
     } elseif ($selfModel -and $selfModel.ToLowerInvariant() -ne $script:FixedModel) {
         $identity = 'FAIL'
@@ -928,8 +1215,8 @@ function Invoke-LunaTool {
         $identityBlocker = 'Effective model/effort was not observable in the worker response'
     }
 
-    $status = if ($identity -eq 'VERIFIED' -and $executionStatus -eq 'COMPLETED') { 'HOST_VERIFIED' } elseif ($identity -eq 'FAIL' -or $executionStatus -eq 'BLOCKED') { 'BLOCKED' } else { 'STARTED_UNVERIFIED' }
-    $blocker = if ($executionStatus -eq 'BLOCKED') { $executionBlocker } else { $identityBlocker }
+    $status = if ($identity -eq 'VERIFIED' -and $executionStatus -eq 'COMPLETED' -and $contextVerified -and $policyVerified) { 'HOST_VERIFIED' } elseif ($identity -eq 'FAIL' -or $executionStatus -eq 'BLOCKED') { 'BLOCKED' } else { 'STARTED_UNVERIFIED' }
+    $blocker = if ($executionStatus -eq 'BLOCKED') { $executionBlocker } elseif (-not $contextVerified) { 'Host did not prove fresh context with controller history excluded' } elseif (-not $policyVerified) { 'Host did not prove the requested workdir, sandbox, approval, and no-fallback policy' } else { $identityBlocker }
     $blocker = Protect-OutputText $blocker
     $payload = [ordered]@{
         status = $status
@@ -942,6 +1229,7 @@ function Invoke-LunaTool {
         runtime = Protect-OutputText $runtime
         runtime_version = $runtimeVersion
         runtime_sha256 = $runtimeHash
+        runtime_trust = 'PINNED_SHA256'
         requested_model = $script:FixedModel
         requested_effort = $script:FixedEffort
         host_observed_model = $hostObservedModel
@@ -949,8 +1237,14 @@ function Invoke-LunaTool {
         self_reported_model = $selfModel
         self_reported_effort = $selfEffort
         identity_proof_kind = $identityProofKind
-        fresh = $true
-        history = 'EXCLUDED'
+        fresh = if ($contextVerified) { $true } else { $null }
+        history = if ($hostHistoryExcluded -eq $true) { 'EXCLUDED' } else { $null }
+        context_verified = $contextVerified
+        policy_verified = $policyVerified
+        host_cwd = Protect-OutputText $hostCwd
+        host_sandbox = $hostSandbox
+        host_approval = $hostApproval
+        host_fallback_allowed = $hostFallbackAllowed
         sandbox = $sandbox
         exit_code = $run.exit_code
         timed_out = $run.timed_out
@@ -958,6 +1252,9 @@ function Invoke-LunaTool {
         execution_status = $executionStatus
         execution_blocker_code = $executionBlockerCode
         execution_blocker = Protect-OutputText $executionBlocker
+        activity_violation = Protect-OutputText $run.activity_violation
+        output_limited = [bool]$run.output_limited
+        read_failure_kind = $run.read_failure_kind
         blocker = $blocker
         output = Protect-OutputText $text
         redaction = [ordered]@{
@@ -975,7 +1272,7 @@ function Invoke-LunaTool {
 function Get-ToolList {
     $tool = [ordered]@{
         name = 'sol_luna_exec'
-        description = 'Launch a fresh ephemeral host-managed Codex worker fixed to gpt-5.6-luna/max. Use execution_mode=async for long-running implementation packets, then poll the task-bound job receipt with sol_luna_poll. The default app-server transport returns a task-bound launch record and rejects host reroutes; set SOL_LUNA_TRANSPORT=cli only for legacy diagnostic mode.'
+        description = 'Launch a fresh ephemeral host-managed Codex worker fixed to gpt-5.6-luna/max after explicit runtime path/SHA-256 and allowed-root checks. Use execution_mode=async for long-running implementation packets, then poll the task-bound job receipt with sol_luna_poll. The default app-server transport returns a task-bound launch record and rejects host reroutes; set SOL_LUNA_TRANSPORT=cli only for legacy diagnostic mode. This broker never changes Windows ACLs.'
         inputSchema = [ordered]@{
             type = 'object'
             additionalProperties = $false
@@ -1015,7 +1312,7 @@ function Get-InitializeResult {
         protocolVersion = '2024-11-05'
         capabilities = @{ tools = @{ listChanged = $false } }
         serverInfo = @{ name = $script:BrokerName; version = $script:BrokerVersion }
-        instructions = 'sol_luna_exec always launches fresh gpt-5.6-luna/max. Run handshake_only=true synchronously first. For implementation packets that may exceed an MCP caller deadline, set execution_mode=async and poll the returned job_id with sol_luna_poll. The nested result records host model/effort at thread/start and rejects model/rerouted events. Worker self-report is advisory; the legacy CLI transport remains STARTED_UNVERIFIED.'
+        instructions = 'sol_luna_exec launches fresh gpt-5.6-luna/max only after pinned-runtime and exact-root checks. Run handshake_only=true synchronously first. For implementation packets that may exceed an MCP caller deadline, set execution_mode=async and poll the returned job_id with sol_luna_poll. The nested result records host model/effort and fresh/history/policy facts at thread/start, rejects model/rerouted events, and separates identity from execution blockers. Worker self-report is advisory; the legacy CLI transport remains STARTED_UNVERIFIED. The broker never repairs ACLs or broadens permissions.'
     }
 }
 

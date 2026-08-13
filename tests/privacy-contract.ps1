@@ -25,12 +25,19 @@ Assert-True ($broker.Contains('<user>')) 'broker must redact user identities'
 Assert-True ($broker.Contains('<host>')) 'broker must redact host identities'
 Assert-True ($broker.Contains('<redacted>')) 'broker must redact credential-shaped values'
 Assert-True ($broker.Contains('SOL_LUNA_ALLOWED_ROOTS must be configured')) 'broker must not use implicit filesystem roots'
+Assert-True ($broker.Contains('AKIA[0-9A-Z]{16}')) 'broker must redact AWS key-shaped values'
+Assert-True ($broker.Contains('eyJ[A-Za-z0-9_-]{20,}')) 'broker must redact JWT-shaped values'
+Assert-True ($broker.Contains('PRIVATE KEY')) 'broker must redact private-key blocks'
+Assert-True ($broker.Contains("(?!Users\\)")) 'broker must redact arbitrary drive paths while preserving only a placeholder for user-home paths'
 
 $docFiles = @(
     (Join-Path $Root 'README.md'),
     (Join-Path $Root 'README.en.md'),
     (Join-Path $Root 'SKILL.md'),
-    (Join-Path $Root 'agents/openai.yaml')
+    (Join-Path $Root 'agents/openai.yaml'),
+    (Join-Path $Root 'SECURITY.md'),
+    (Join-Path $Root 'CONTRIBUTING.md'),
+    (Join-Path $Root 'CHANGELOG.md')
 ) + @(Get-ChildItem -LiteralPath (Join-Path $Root 'references') -File -Filter '*.md' | Select-Object -ExpandProperty FullName)
 $docs = (($docFiles | Where-Object { Test-Path -LiteralPath $_ }) | ForEach-Object { Get-Content -Raw -LiteralPath $_ }) -join "`n"
 Assert-NotMatch $docs '(?i)C:\\Users\\(?!<)' 'documentation must not contain a concrete Windows user path'
@@ -65,7 +72,7 @@ $userMessage = [string](($records | Where-Object { $_.id -eq 1 }).error.message)
 $hostMessage = [string](($records | Where-Object { $_.id -eq 2 }).error.message)
 if ($env:USERNAME) { Assert-True (-not $userMessage.Contains($env:USERNAME)) 'user name must not appear in broker errors' }
 if ($env:COMPUTERNAME) { Assert-True (-not $hostMessage.Contains($env:COMPUTERNAME)) 'host name must not appear in broker errors' }
-if ($probeUserPath -match '(?i)\\Users\\') { Assert-True ($userMessage.Contains('<user>')) 'Windows user path must be replaced with the user placeholder' }
-if ($env:COMPUTERNAME) { Assert-True ($hostMessage.Contains('<host>')) 'host name must be replaced with the host placeholder' }
+Assert-True (-not $userMessage.Contains($probeUserPath)) 'arbitrary user paths must never be echoed in broker errors'
+Assert-True (-not $hostMessage.Contains($probeHostPath)) 'arbitrary host paths must never be echoed in broker errors'
 
 Write-Output 'PASS: Sol privacy contract'

@@ -32,15 +32,15 @@ Fallback: BLOCKED
 Sol may request enablement and verify it. Sol must not claim enablement from a
 worker self-report, a local role file, or a successful source/runtime sync.
 
-Normal dispatch follows **Native-first -> Desktop-task -> MCP**. First use a
+Normal dispatch follows **Native-first -> MCP -> Desktop-task**. First use a
 native subagent surface visible in the current controller thread when its
 declared schema, exact Luna/max pair, fresh/history semantics, and host evidence
 pass preflight. `multi_agent_v1__spawn_agent` is canonical; a future equivalent
 must be explicitly declared native and independently verifiable. If native
-preflight fails and the plan explicitly allows a user-owned task, use the
-conditional `USER_VISIBLE_TASK` Desktop route. Otherwise skip it without
-creating a task. Use the `HOST_MANAGED` `sol_luna_broker` only as priority 3
-after Desktop is skipped or fails. If broker preflight also fails, return
+preflight fails, use the `HOST_MANAGED` `sol_luna_broker` as priority 2. Only
+after MCP is skipped or fails may an explicitly approved `USER_VISIBLE_TASK`
+Desktop route be used as priority 3. `UNSPECIFIED` authorization requires a
+fresh confirmation; it is not `DENIED`. If all eligible routes fail, return
 `BLOCKED` and do not change the model.
 
 ## Host enablement request
@@ -57,7 +57,8 @@ Controller history: EXCLUDED
 Required receipt: task-bound HOST_RECEIPT
 Required identity evidence: HOST_OBSERVED_MODEL_EFFORT or authoritative role launch record
 Fallback: BLOCKED
-No user-owned task: true
+User-owned task: DENIED | ALLOWED | UNSPECIFIED
+User approval: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 ```
 
 For `NATIVE_GENERIC`, first check whether the current controller thread already
@@ -124,7 +125,7 @@ If another thread on the same Desktop host exposes `multi_agent_v1__spawn_agent`
 with Luna/max while the current thread exposes only the Sol/Terra
 `collaboration.spawn_agent` schema, classify the current result as
 `THREAD_SURFACE_NOT_VISIBLE`, evaluate the explicit Desktop-task gate, and then
-preflight the current thread's priority-3 MCP if Desktop is skipped or fails.
+preflight the current thread's priority-2 MCP after native failure.
 If MCP is also unavailable, the recovery action is surface migration/rebind or
 a fresh controller thread, not model substitution.
 
@@ -154,7 +155,7 @@ local Sol config key is evidence of that host-side enablement.
 ## Explicit Desktop task alternative
 
 Some Desktop hosts expose Luna through a visible app task even when the native
-worker registry is missing. This is the conditional priority-2
+worker registry is missing. This is the conditional priority-3
 `USER_VISIBLE_TASK` adapter described in [desktop-task-lane.md](desktop-task-lane.md),
 not a registration mechanism. It may be used only when the plan explicitly sets
 `User-owned task: ALLOWED` and the user grants approval. It must not be created
@@ -169,9 +170,9 @@ route does not run the local MCP broker or perform ACL/token remediation. A
 process-creation or sandbox-permission failure remains an execution blocker.
 
 The installed Sol Luna MCP broker is an explicit managed transport for hosts
-where the native surface is not visible, is schema/model-incompatible, the
-Desktop task was skipped or failed, or native preflight cannot produce the
-required host evidence. It is the third route, not a silent model fallback or
+where the native surface is not visible, is schema/model-incompatible, or
+native preflight cannot produce the required host evidence. It is the second
+route, not a silent model fallback or
 native subagent. By default it fixes
 `gpt-5.6-luna / max`, creates a fresh ephemeral app-server thread, and returns
 a task-bound `HOST_LAUNCH_RECORD`. The CLI route remains available only when
