@@ -13,6 +13,8 @@
 - `sol-xhigh` 的 `xhigh` 不可用时不静默降级，按 `runtime`/`model_identity` 失败处理。
 - 同一问题在 `luna-max` 下超过 2 次持续审核失败，或业务不清晰反复引发回归时，停止重试并提交 `sol-xhigh` 处理。
 - 握手失败保持 `BLOCKED`，不会让 Sol 直接接管实现，也不会把失败伪装成 worker 结果。
+- `BLOCKED` 只终止当前实现派发；若仍有安全的宿主修复路径，必须向调用者返回 `HOST_REMEDIATION_REQUIRED`，明确权限申请、外部变更、最小 read-only 探针和下一步，而不是只说“等待”。
+- 恢复顺序固定为：native 握手 → MCP 握手 → 用户/宿主批准最小注册或 sandbox/token 修复 → 刷新/重绑 → 新 task 的最小 PowerShell 探针；探针成功前不重试实现包。
 - `LUNA_MAX` 正常调度采用“原生优先、MCP 次选”（native-first -> MCP-second）：第一优先使用当前线程可见且契约匹配的 `multi_agent_v1__spawn_agent`，或未来等价、由宿主声明且可验证的 native surface。
 - 只有 native surface 不可见、schema/`gpt-5.6-luna / max` 不匹配，或 native preflight 不能取得所需宿主证据时，才使用 `scripts/sol-luna-broker.ps1` 提供的 `HOST_MANAGED` MCP。MCP 不是 native subagent，也不是静默 model fallback；两条路线都不可用时保持原模型并按现有规则返回 `BLOCKED`。
 - `collaboration.spawn_agent` 是独立的旧/兼容 schema，不能冒充 canonical `multi_agent_v1__spawn_agent`、混用字段、借用其 capability/receipt，或把自身的 Sol/Terra 枚举当成全局能力结论。

@@ -265,6 +265,43 @@ If the host says `agent type is currently not available`, the role is not
 registered on that host. Do not retry the same packet through the generic
 surface and do not replace the role with Terra or Sol.
 
+## Bounded recovery and permission request
+
+`BLOCKED` is the result for the current implementation packet, not a reason
+to stop helping the caller. When a real host action can change the state, use
+this bounded sequence and report each transition:
+
+| Attempt | Caller action | Required evidence | If it fails |
+| --- | --- | --- | --- |
+| 1 | Native handshake-only probe on the current thread | native schema, fresh receipt, Luna/max host identity | record native failure and continue to MCP |
+| 2 | MCP `sol_luna_exec(handshake_only=true)` | host launch record and execution status | issue host remediation request |
+| 3 | User/host owner approves the smallest official registry or sandbox repair, then reload/restart | approval plus setup/reload record | remain `HOST_REMEDIATION_REQUIRED` |
+| 4 | New minimal read-only PowerShell probe | `PROCESS_START=YES`, `EXECUTION=COMPLETED` | remain `BLOCKED`; do not send implementation |
+
+Use a new task id for every probe after an external state change. Do not repeat
+the same implementation packet, guess an ACL command, or silently widen the
+sandbox. The permission request must identify the exact host component and
+scope, for example:
+
+```text
+Status: HOST_REMEDIATION_REQUIRED
+Task ID: <probe task id>
+Failure code: PROCESS_CREATION_DENIED | WINDOWS_SANDBOX_ACL_FAILED | model/role mismatch
+Observed: <one redacted host error and receipt>
+Requested action: <refresh native role allowlist, reload worker registry, or repair the official sandbox helper/token>
+Scope: approved Codex runtime and declared worktree only; no broad user-root/full-control ACL
+Approval: REQUIRED
+After approval: restart/rebind the owning host, then run a minimal read-only PowerShell probe
+Acceptance: PROCESS_START=YES; EXECUTION=COMPLETED; fresh Luna/max handshake still matches
+```
+
+The caller should present this packet to the user or host/capability owner and
+ask for explicit approval before any administrative, ACL, token, or registry
+change. Sol may perform the new read-only probe after approval, but must not
+claim success from approval alone. If the host refuses or the probe remains
+denied, return both the implementation verdict `BLOCKED` and the next safe
+action rather than retrying indefinitely.
+
 ## Step 4: refresh and verify registration
 
 After the host owner changes its registry, the caller must refresh the host

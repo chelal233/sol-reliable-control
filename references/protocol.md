@@ -15,6 +15,7 @@ Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
 Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED
 Dispatch priority: NATIVE_FIRST_THEN_MCP
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
+Recovery policy: BOUNDED_HOST_REMEDIATION | NONE
 Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
 Registration action: NONE | REQUEST_HOST_ENABLEMENT | REGISTER_CUSTOM_ROLE | REFRESH_PREFLIGHT
 Capability preflight: REQUIRED
@@ -318,7 +319,7 @@ Do not encode a fixed quality ranking. Model names, cost, and effort settings ar
 
 ```text
 Task ID: <stable id>
-Status: PASS | PASS_WITH_WARNING | BLOCKED
+Status: PASS | PASS_WITH_WARNING | BLOCKED | HOST_REMEDIATION_REQUIRED
 Summary: <what happened>
 Changed or produced: <exact paths, artifacts, or None>
 Verification: <checks, exit status, concise result>
@@ -331,6 +332,10 @@ Evidence: <artifact or result path bound to the acceptance conditions>
 Review verdict: PASS | FIX | BLOCKED | NOT_RUN
 Failure class: runtime | model_identity | permission | dependency | scope | verification | conflict | none
 Blocker: <None or concrete reason>
+Recovery state: NONE | HOST_REMEDIATION_REQUIRED | PROBE_PENDING | READY | EXHAUSTED
+Recovery attempt: <number/max or None>
+Permission request: <smallest host/admin action or None>
+Next action: <concrete user/host operation or None>
 ```
 
 `PASS` requires `Changed or produced`, `Verification`, and `Evidence`. For a
@@ -346,7 +351,13 @@ overall task.
 
 ## Fallback and failure rules
 
-When the requested lane cannot start, preserve the original plan and owner. Do not silently replace it. If the plan explicitly permits `FALLBACK`, select one compatible lane, record `Identity: UNVERIFIED`, and continue only when the risk and scope rules allow it. Otherwise return `BLOCKED` with the failure class and the missing host fact.
+When the requested lane cannot start, preserve the original plan and owner.
+Do not silently replace it. If the plan explicitly permits `FALLBACK`, select
+one compatible lane, record `Identity: UNVERIFIED`, and continue only when the
+risk and scope rules allow it. Otherwise return `BLOCKED` for the current
+dispatch plus `HOST_REMEDIATION_REQUIRED` and a concrete `Next action` when a
+safe host repair or permission request remains. Do not leave the caller with
+only the word `BLOCKED` when a bounded recovery step is available.
 
 If the plan has `Luna enablement: REQUIRED` and the host does not expose the
 required pair, return `HOST_ENABLEMENT_REQUIRED` and keep `Fallback: BLOCKED`.
@@ -357,3 +368,27 @@ If a surface does not expose `gpt-5.6-luna`, do not automatically turn the
 request into `SOL_XHIGH`: replan to `SOL_XHIGH` only when its normal task-fit or
 escalation rule applies. Otherwise return `BLOCKED` with the original
 `LUNA_MAX` request, the rejected surface, and the missing capability evidence.
+
+`BLOCKED` applies to the current implementation dispatch, not to the recovery
+workflow. When the caller can safely change host state, return a bounded
+remediation packet instead of an unexplained dead end:
+
+```text
+Recovery state: HOST_REMEDIATION_REQUIRED | PROBE_PENDING | READY | EXHAUSTED
+Recovery attempt: <number and maximum, for example 2/3>
+Failure code: <PROCESS_CREATION_DENIED | WINDOWS_SANDBOX_ACL_FAILED | model/role mismatch>
+Permission request: <smallest host/admin action or NONE>
+Approval: REQUIRED | GRANTED | NOT_GRANTED
+External change evidence: <host receipt, restart/setup record, or None>
+Next probe: <minimal read-only probe class>
+Stop condition: <what keeps implementation BLOCKED>
+```
+
+The caller must tell the user or host owner exactly what action is needed and
+obtain approval before an ACL, token, registry, or elevated setup change. Do
+not prescribe broad root/full-control ACLs from this protocol. After approval,
+refresh or rebind the worker surface and run a new minimal read-only
+PowerShell probe. Only a successful probe plus a fresh identity handshake may
+authorize implementation. Every retry must use a new task id and new external
+state evidence; an unchanged `PROCESS_CREATION_DENIED` or model rejection is
+not a reason to resubmit the implementation packet.

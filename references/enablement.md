@@ -110,6 +110,15 @@ preflight only after the host supplies new enablement evidence. A new
 user-owned task is not an enablement mechanism and must not be created to
 obtain Luna.
 
+This is a recoverable host block, not a caller-facing dead end. Return
+`HOST_REMEDIATION_REQUIRED` with the exact registration/permission request,
+approval status, external change evidence, and the next minimal read-only
+probe. The caller should ask the user or host owner to approve the smallest
+official registry, reload, or sandbox/token repair. After approval, use a new
+task id, refresh the surface, and run the probe before attempting any
+implementation. Do not issue broad ACL/full-control commands, retry an
+unchanged packet, or treat approval alone as enablement.
+
 If another thread on the same Desktop host exposes `multi_agent_v1__spawn_agent`
 with Luna/max while the current thread exposes only the Sol/Terra
 `collaboration.spawn_agent` schema, classify the current result as

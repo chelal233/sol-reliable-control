@@ -55,6 +55,10 @@ Assert-Contains $skill 'THREAD_SURFACE_NOT_VISIBLE' 'thread-bound surface gaps m
 Assert-Contains $skill 'Native-first dispatch ladder' 'Luna dispatch must define an operational priority ladder'
 Assert-Contains $skill 'native preflight cannot obtain the required host evidence' 'managed MCP must require a concrete native-preflight failure'
 Assert-Contains $skill 'MCP is not a native subagent' 'managed MCP must not be represented as native execution'
+Assert-Contains $skill 'Bounded recovery loop' 'skill must define a bounded recovery workflow after a block'
+Assert-Contains $skill 'HOST_REMEDIATION_REQUIRED' 'skill must return an actionable host remediation state'
+Assert-Contains $skill 'smallest official' 'skill must require minimal approved host changes'
+Assert-Contains $skill 'minimal read-only PowerShell probe' 'skill must require a post-remediation execution probe'
 
 Assert-Contains $protocol 'Surface:' 'plan packet must identify the execution surface'
 Assert-Contains $protocol 'Capability verdict:' 'handshake must carry capability evidence'
@@ -75,6 +79,10 @@ Assert-Contains $protocol 'sol_luna_poll' 'protocol must define asynchronous bro
 Assert-Contains $protocol 'Dispatch priority: NATIVE_FIRST_THEN_MCP' 'plan must bind Luna to native-first then MCP-second routing'
 Assert-Contains $protocol 'MCP is not native evidence' 'protocol must keep managed transport evidence distinct from native evidence'
 Assert-Contains $protocol 'No silent model fallback' 'route failure must never silently replace the requested model'
+Assert-Contains $protocol 'Recovery policy: BOUNDED_HOST_REMEDIATION' 'plan must declare bounded host recovery policy'
+Assert-Contains $protocol 'Permission request:' 'protocol must carry an explicit permission request'
+Assert-Contains $protocol 'External change evidence:' 'protocol must require evidence of host state change'
+Assert-Contains $protocol 'Do not leave the caller' 'protocol must provide a next action when recovery remains possible'
 
 Assert-Contains $adapters 'multi_agent_v1__spawn_agent' 'native adapter must name the generic worker surface'
 Assert-Contains $adapters 'fork_context: false' 'native adapter must exclude controller history'
@@ -108,6 +116,8 @@ Assert-Contains $enablement 'collaboration.spawn_agent' 'host-owned surface must
 Assert-Contains $enablement 'execution_mode="async"' 'enablement guide must define asynchronous implementation submission'
 Assert-Contains $enablement 'sol_luna_poll' 'enablement guide must define asynchronous result retrieval'
 Assert-Contains $enablement 'Native-first -> MCP-second' 'enablement must preserve the route priority ladder'
+Assert-Contains $enablement 'HOST_REMEDIATION_REQUIRED' 'enablement must return an actionable remediation state'
+Assert-Contains $enablement 'smallest' 'enablement must request minimal approved host repair'
 Assert-Contains $protocol 'configuration boundary' 'protocol must explain config versus host ownership'
 Assert-Contains $protocol 'registration guide' 'protocol must link the registration procedure'
 
@@ -136,12 +146,18 @@ Assert-Contains $registration 'HOST_JOB_RECEIPT' 'registration guide must define
 Assert-Contains $registration 'sol_luna_poll' 'registration guide must define result polling'
 Assert-Contains $registration 'execution_mode="async"' 'registration guide must define asynchronous execution'
 Assert-Contains $registration 'Do not register the broker as a native surface' 'registration must keep MCP and native surfaces distinct'
+Assert-Contains $registration 'Bounded recovery and permission request' 'registration must define bounded recovery attempts'
+Assert-Contains $registration 'Approval: REQUIRED' 'registration must require explicit host/admin approval'
+Assert-Contains $registration 'PROCESS_START=YES' 'registration must define the successful execution probe'
+Assert-Contains $registration 'no broad user-root/full-control ACL' 'registration must prohibit broad ACL requests'
 
 Assert-Contains $readme 'README.en.md' 'README must expose the English companion'
 Assert-Contains $readme 'sol-advisor' 'README must record the Sol advisor reference project'
 Assert-Contains $readme 'codex-sol-control' 'README must record the Codex Sol control reference project'
 Assert-Contains $readme 'MCP' 'README must describe the managed broker surface'
 Assert-Contains $readme '原生优先、MCP 次选' 'README must state the native-first route in its existing Chinese style'
+Assert-Contains $readme 'HOST_REMEDIATION_REQUIRED' 'README must explain actionable recovery after a block'
+Assert-Contains $readme '最小 PowerShell 探针' 'README must mention the post-permission probe'
 
 Assert-Contains $readmeEn 'Native-first -> MCP-second' 'English README must state the Luna route priority'
 Assert-Contains $readmeEn 'multi_agent_v1__spawn_agent' 'English README must name the canonical native surface'
@@ -152,6 +168,8 @@ Assert-Contains $readmeEn 'MCP is not a native subagent' 'English README must ke
 Assert-Contains $readmeEn 'not a silent model fallback' 'English README must forbid silent model fallback'
 Assert-Contains $readmeEn 'retain the requested `gpt-5.6-luna / max`' 'English README must preserve the requested Luna model and effort on route failure'
 Assert-Contains $readmeEn 'BLOCKED' 'English README must fail closed when both Luna routes fail'
+Assert-Contains $readmeEn 'HOST_REMEDIATION_REQUIRED' 'English README must expose actionable host recovery'
+Assert-Contains $readmeEn 'minimal PowerShell read-only probe' 'English README must require the post-repair probe'
 
 Assert-Contains $enablement 'BROKER_RUN_RECEIPT' 'enablement guide must classify broker receipts'
 Assert-Contains $enablement 'STARTED_UNVERIFIED' 'enablement guide must keep broker identity unverified'

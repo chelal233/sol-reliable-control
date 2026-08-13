@@ -12,6 +12,17 @@ Language: [简体中文](README.md) · [English](README.en.md)
 - `SOL_XHIGH`: cross-cutting planning, arbitration, or final review; requests
   `gpt-5.6-sol / xhigh`.
 
+`BLOCKED` terminates the current implementation dispatch, not the recovery
+workflow. When a safe host repair remains possible, return
+`HOST_REMEDIATION_REQUIRED` with the exact permission request, external-change
+evidence, minimal read-only probe, and next action. Do not leave the caller
+with only “blocked” or loop on an unchanged packet.
+
+The recovery order is fixed: native handshake -> MCP handshake -> explicit user
+or host-owner approval for the smallest registry/sandbox/token repair ->
+refresh/rebind -> a new-task minimal PowerShell read-only probe. Do not retry
+the implementation packet until that probe succeeds.
+
 `LUNA_MAX` uses **Native-first -> MCP-second** routing. Priority 1 is a native
 subagent surface that is visible to the current thread and matches the worker
 contract. The canonical surface is `multi_agent_v1__spawn_agent`; a future equivalent

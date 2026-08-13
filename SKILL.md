@@ -64,19 +64,47 @@ Any state -> BLOCKED
 - `EXECUTING` requires host dispatch, transport, scope, and the applicable identity gate.
 - `RESULT_PENDING` means the lane has stopped and returned its structured result.
 - `REVIEW_PENDING` means Sol is checking acceptance and evidence.
-- `BLOCKED` is terminal for the current dispatch; do not retry an identical packet.
+- `BLOCKED` is terminal for the current implementation dispatch; do not retry an identical packet.
+
+`BLOCKED` does not end host recovery. When a preflight or execution probe
+fails, return a concrete recovery action and ask the caller to perform the
+required host operation. Resume only after an external state change and a new
+task-bound probe; never loop on an unchanged failure.
+
+## Bounded recovery loop
+
+Use this recovery order for a Luna task that has not reached `HOST_VERIFIED`:
+
+1. Run a native, handshake-only probe on the current thread.
+2. If native preflight is unavailable or lacks host evidence, run the MCP
+   broker handshake as priority 2 and record the native failure reason.
+3. If either route reports `WINDOWS_SANDBOX_ACL_FAILED`,
+   `PROCESS_CREATION_DENIED`, or a model/role registration mismatch, return
+   `HOST_REMEDIATION_REQUIRED` with an exact permission/host-registration
+   request. Ask the user or host owner to approve the smallest official
+   remediation; do not issue broad ACL/full-control commands from the skill.
+4. After the approved host change, refresh/rebind the worker registry and run
+   a new minimal read-only PowerShell probe. Only a successful probe permits a
+   fresh identity handshake and then the implementation packet.
+
+Each recovery step must have a new task id, an external state-change record,
+and a bounded stop condition. The caller-facing packet must include the
+failure code, requested host action, approval status, probe command class, and
+next action. If the probe still fails, preserve `LUNA_MAX` and report
+`BLOCKED`/`HOST_REMEDIATION_REQUIRED`; do not substitute a model or resubmit
+the implementation packet.
 
 ## Controller workflow
 
 1. State the goal, observable `done_when`, exclusions, dependencies, risk, task scope, owner, route, identity gate, and verification.
 2. Send the compact plan packet from [references/protocol.md](references/protocol.md).
-3. Require `LUNA_MAX` host enablement preflight; use [references/enablement.md](references/enablement.md) and the step-by-step [registration guide](references/registration.md) when the host does not advertise the required pair.
+3. Require `LUNA_MAX` host enablement preflight; use [references/enablement.md](references/enablement.md) and the step-by-step [registration guide](references/registration.md) when the host does not advertise the required pair or when recovery needs a host permission request.
 4. Start a fresh execution context when the host supports it; exclude controller history unless a deliberate continuation is required.
 5. Require the handshake packet before allowing implementation. A transport response alone is not permission to execute.
 6. Receive only the structured result, verification output, and evidence/artifact paths. Do not import the worker's full reasoning.
 7. Review the result against `done_when`, scope, contradictions, regressions, and evidence freshness.
 8. Allow at most one focused correction with the original scope and owner. Re-review the corrected result.
-9. Return `PASS`, `FIX`, or `BLOCKED`; Sol alone decides the overall result.
+9. Return `PASS`, `FIX`, `BLOCKED`, or `HOST_REMEDIATION_REQUIRED`; Sol alone decides the overall result and the next recovery action.
 
 ## Handshake gates
 
@@ -146,10 +174,11 @@ register a model in the host-owned `collaboration.spawn_agent` surface; see
 
 When a caller is blocked before dispatch, follow
 [references/registration.md](references/registration.md): identify the exact
-surface, submit the host registration packet, refresh the capability snapshot,
-then retry preflight only with new evidence. A safe low-risk probe may prove
-that a surface can start Luna, but an `agent_id` and worker self-report alone
-do not satisfy `HOST_VERIFIED` for high-risk work.
+surface, submit the host registration or remediation packet, obtain the
+required user/host approval, refresh the capability snapshot, then retry
+preflight only with new evidence. A safe low-risk probe may prove that a
+surface can start Luna, but an `agent_id` and worker self-report alone do not
+satisfy `HOST_VERIFIED` for high-risk work.
 
 For `NATIVE_GENERIC`, `fork_context: false` means fresh context and excluded
 controller history in the current generic spawn schema. A returned `agent_id`
@@ -230,8 +259,10 @@ sol_luna_exec({
 Use the broker only after recording the native candidate and one of the three
 priority-2 trigger conditions above. Keep the high-risk identity gate closed
 until the host supplies independent identity evidence; a worker self-report
-never creates `HOST_VERIFIED`. If broker preflight also fails, return `BLOCKED`
-without changing the model. The broker implementation and contract test live under
+never creates `HOST_VERIFIED`. If broker preflight also fails, return
+`HOST_REMEDIATION_REQUIRED` with the exact next host action; the implementation
+remains `BLOCKED` without changing the model. The broker implementation and
+contract test live under
 `scripts/sol-luna-broker.ps1` and `tests/broker-contract.ps1` in the installed
 skill.
 
