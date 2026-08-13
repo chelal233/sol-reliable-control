@@ -39,6 +39,16 @@ Assert-Contains $scriptText 'SOL_LUNA_ALLOWED_ROOTS must be configured' 'broker 
 Assert-Contains $scriptText 'HOST_JOB_RECEIPT' 'broker must expose a task-bound asynchronous receipt'
 Assert-Contains $scriptText 'sol_luna_poll' 'broker must expose asynchronous result retrieval'
 Assert-Contains $scriptText 'execution_mode' 'broker must expose synchronous/asynchronous execution modes'
+Assert-Contains $scriptText 'WINDOWS_SANDBOX_ACL_FAILED' 'broker must classify Windows sandbox ACL failures'
+Assert-Contains $scriptText 'PROCESS_CREATION_DENIED' 'broker must classify denied process creation'
+Assert-Contains $scriptText 'SetNamedSecurityInfoW\s+failed' 'broker must recognize the Windows sandbox ACL error signature'
+Assert-Contains $scriptText 'CreateProcessAsUserW\s+failed' 'broker must recognize the denied process creation signature'
+Assert-Contains $scriptText 'command could not execute' 'broker must recognize denied command execution text'
+Assert-Contains $scriptText 'execution_status = $executionStatus' 'broker must return execution status independently from identity'
+Assert-Contains $scriptText 'execution_blocker_code = $executionBlockerCode' 'broker must return an execution blocker code'
+Assert-Contains $scriptText 'execution_blocker = Protect-OutputText $executionBlocker' 'broker must redact the execution blocker'
+Assert-Contains $scriptText '$exitCode = if ($timedOut) { $null } elseif ($executionStatus -eq ''COMPLETED'') { 0 } else { 1 }' 'blocked app-server execution must not return exit code zero'
+Assert-Contains $scriptText '$identity -eq ''VERIFIED'' -and $executionStatus -eq ''COMPLETED''' 'HOST_VERIFIED must require both verified identity and completed execution'
 
 $requests = @(
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}',

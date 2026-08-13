@@ -314,6 +314,28 @@ function Get-AppServerMessageText {
     return ($texts -join "`n")
 }
 
+function Get-AppServerExecutionFailure {
+    param(
+        [AllowNull()] [AllowEmptyString()] [string] $Text,
+        [AllowNull()] [AllowEmptyString()] [string] $Stderr
+    )
+
+    $evidence = @($Text, $Stderr) -join "`n"
+    if ($evidence -match '(?i)SetNamedSecurityInfoW\s+failed\s*:\s*5\b') {
+        return [ordered]@{
+            code = 'WINDOWS_SANDBOX_ACL_FAILED'
+            blocker = 'Windows sandbox ACL setup failed with access denied'
+        }
+    }
+    if ($evidence -match '(?i)(CreateProcessAsUserW\s+failed\s*:\s*5\b|Windows sandbox denied process creation|command could not execute)') {
+        return [ordered]@{
+            code = 'PROCESS_CREATION_DENIED'
+            blocker = 'Windows sandbox denied process creation'
+        }
+    }
+    return $null
+}
+
 function Invoke-AppServerWorker {
     param(
         [Parameter(Mandatory = $true)] [string] $RuntimePath,
@@ -361,7 +383,16 @@ function Invoke-AppServerWorker {
     $initError = if ($initResponse) { $initResponse.PSObject.Properties['error'] } else { $null }
     if ($null -eq $initResponse -or $null -ne $initError) {
         Stop-AppServerProcess $process
-        return [ordered]@{ exit_code = 1; timed_out = $false; events = @(); raw_lines = @(); thread_id = $null; host_model = $null; host_effort = $null; host_launch_record = $false; rerouted = @(); text = ''; stderr = $stderrTask.Result }
+        $stderr = $stderrTask.Result
+        $executionFailure = Get-AppServerExecutionFailure -Text '' -Stderr $stderr
+        return [ordered]@{
+            exit_code = 1; timed_out = $false; events = @(); raw_lines = @(); thread_id = $null
+            host_model = $null; host_effort = $null; host_launch_record = $false; rerouted = @()
+            execution_status = 'BLOCKED'
+            execution_blocker_code = if ($executionFailure) { $executionFailure.code } else { 'APP_SERVER_INITIALIZE_FAILED' }
+            execution_blocker = if ($executionFailure) { $executionFailure.blocker } else { 'Codex app-server initialization failed' }
+            text = ''; stderr = $stderr
+        }
     }
 
     Send-AppServerJson -Process $process -Value ([ordered]@{ jsonrpc = '2.0'; method = 'initialized'; params = @{} })
@@ -457,8 +488,26 @@ function Invoke-AppServerWorker {
             }
         }
     }
-    $turnSucceeded = $null -ne $turnCompletedEvent -and $turnStatus -eq 'completed' -and -not $turnError
-    $exitCode = if ($timedOut) { $null } elseif ($turnSucceeded) { 0 } else { 1 }
+    $executionFailure = Get-AppServerExecutionFailure -Text $text -Stderr $stderr
+    $executionStatus = 'BLOCKED'
+    $executionBlockerCode = $null
+    $executionBlocker = $null
+    if ($timedOut) {
+        $executionBlockerCode = 'BROKER_TIMEOUT'
+        $executionBlocker = 'Codex app-server exceeded the broker timeout'
+    } elseif ($executionFailure) {
+        $executionBlockerCode = $executionFailure.code
+        $executionBlocker = $executionFailure.blocker
+    } elseif ($turnError) {
+        $executionBlockerCode = 'TURN_ERROR'
+        $executionBlocker = "Codex turn failed: $turnError"
+    } elseif ($null -eq $turnCompletedEvent -or $turnStatus -ne 'completed') {
+        $executionBlockerCode = 'TURN_NOT_COMPLETED'
+        $executionBlocker = 'Codex app-server turn did not complete successfully'
+    } else {
+        $executionStatus = 'COMPLETED'
+    }
+    $exitCode = if ($timedOut) { $null } elseif ($executionStatus -eq 'COMPLETED') { 0 } else { 1 }
     return [ordered]@{
         exit_code = $exitCode
         timed_out = $timedOut
@@ -472,6 +521,9 @@ function Invoke-AppServerWorker {
         turn_completed = [bool]$turnCompletedEvent
         turn_status = $turnStatus
         turn_error = $turnError
+        execution_status = $executionStatus
+        execution_blocker_code = $executionBlockerCode
+        execution_blocker = $executionBlocker
         text = $text
         stderr = $stderr
     }
@@ -692,6 +744,9 @@ function Start-AsyncLunaJob {
         fresh = $true
         history = 'EXCLUDED'
         identity = 'PENDING'
+        execution_status = 'PENDING'
+        execution_blocker_code = $null
+        execution_blocker = $null
         blocker = 'Worker is running asynchronously; poll the task-bound job receipt for the result'
         redaction = [ordered]@{
             status = 'APPLIED'
@@ -738,6 +793,7 @@ function Invoke-PollTool {
 
     if ($null -eq $state) { throw 'job receipt was not found' }
     $status = [string]$state.status
+    $completedPayload = if ($status -eq 'COMPLETED' -and $state.result -and $state.result.structuredContent) { $state.result.structuredContent } else { $null }
     $payload = [ordered]@{
         status = if ($status -eq 'COMPLETED') { 'COMPLETED' } elseif ($status -eq 'FAILED') { 'FAILED' } else { 'PENDING' }
         surface = 'HOST_MANAGED'
@@ -750,7 +806,10 @@ function Invoke-PollTool {
         updated_at = [string]$state.updated_at
         fresh = $true
         history = 'EXCLUDED'
-        identity = if ($status -eq 'COMPLETED' -and $state.result -and $state.result.structuredContent) { [string]$state.result.structuredContent.identity } else { 'PENDING' }
+        identity = if ($completedPayload) { [string]$completedPayload.identity } else { 'PENDING' }
+        execution_status = if ($completedPayload) { Get-TextProperty $completedPayload 'execution_status' } elseif ($status -eq 'FAILED') { 'BLOCKED' } else { 'PENDING' }
+        execution_blocker_code = if ($completedPayload) { Get-TextProperty $completedPayload 'execution_blocker_code' } elseif ($status -eq 'FAILED') { 'BROKER_WORKER_FAILED' } else { $null }
+        execution_blocker = if ($completedPayload) { Protect-OutputText (Get-TextProperty $completedPayload 'execution_blocker') } elseif ($status -eq 'FAILED') { Protect-OutputText ([string]$state.error) } else { $null }
         requested_model = $script:FixedModel
         requested_effort = $script:FixedEffort
         result = $state.result
@@ -837,54 +896,40 @@ function Invoke-LunaTool {
     $identityProofKind = 'SELF_REPORT_ONLY'
     $receiptKind = 'BROKER_RUN_RECEIPT'
     $identity = 'UNVERIFIED'
-    $blocker = 'Self-report matches, but no host-observed identity telemetry was returned'
-    $status = 'STARTED_UNVERIFIED'
+    $identityBlocker = 'Self-report matches, but no host-observed identity telemetry was returned'
+    $executionStatus = if ($run.timed_out -or $run.exit_code -ne 0) { 'BLOCKED' } else { 'COMPLETED' }
+    $executionBlockerCode = if ($run.timed_out) { 'BROKER_TIMEOUT' } elseif ($run.exit_code -ne 0) { 'RUNTIME_EXIT_NONZERO' } else { $null }
+    $executionBlocker = if ($run.timed_out) { 'Codex runtime exceeded the broker timeout' } elseif ($run.exit_code -ne 0) { "Codex runtime exited with code $($run.exit_code)" } else { $null }
     if ($script:Transport -eq 'app-server') {
         $hostObservedModel = $run.host_model
         $hostObservedEffort = $run.host_effort
         $identityProofKind = 'ROLE_MAPPING_AND_LAUNCH_RECORD'
         $receiptKind = 'HOST_LAUNCH_RECORD'
-        if ($run.timed_out) {
+        $executionStatus = [string]$run.execution_status
+        $executionBlockerCode = $run.execution_blocker_code
+        $executionBlocker = $run.execution_blocker
+        if (@($run.rerouted).Count -gt 0) {
             $identity = 'FAIL'
-            $status = 'BLOCKED'
-            $blocker = 'Codex app-server exceeded the broker timeout'
-        } elseif ($run.exit_code -ne 0) {
-            $identity = 'FAIL'
-            $status = 'BLOCKED'
-            $blocker = if ($run.turn_error) { "Codex turn failed: $($run.turn_error)" } else { 'Codex app-server turn did not complete successfully' }
-        } elseif (@($run.rerouted).Count -gt 0) {
-            $identity = 'FAIL'
-            $status = 'BLOCKED'
-            $blocker = 'Host emitted model/rerouted during the Luna turn'
+            $identityBlocker = 'Host emitted model/rerouted during the Luna turn'
         } elseif (-not $run.host_launch_record) {
             $identity = 'FAIL'
-            $status = 'BLOCKED'
-            $blocker = "Host launch record did not match requested model/effort: model=$hostObservedModel effort=$hostObservedEffort"
+            $identityBlocker = "Host launch record did not match requested model/effort: model=$hostObservedModel effort=$hostObservedEffort"
         } else {
             $identity = 'VERIFIED'
-            $status = 'HOST_VERIFIED'
-            $blocker = 'Fresh app-server launch record matched gpt-5.6-luna/max and no host reroute was observed'
+            $identityBlocker = 'Fresh app-server launch record matched gpt-5.6-luna/max and no host reroute was observed'
         }
-    } elseif ($run.timed_out) {
-        $identity = 'FAIL'
-        $status = 'BLOCKED'
-        $blocker = 'Codex runtime exceeded the broker timeout'
-    } elseif ($run.exit_code -ne 0) {
-        $identity = 'FAIL'
-        $status = 'BLOCKED'
-        $blocker = "Codex runtime exited with code $($run.exit_code)"
     } elseif ($selfModel -and $selfModel.ToLowerInvariant() -ne $script:FixedModel) {
         $identity = 'FAIL'
-        $status = 'BLOCKED'
-        $blocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
+        $identityBlocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
     } elseif ($selfEffort -and $selfEffort.ToLowerInvariant() -ne $script:FixedEffort) {
         $identity = 'FAIL'
-        $status = 'BLOCKED'
-        $blocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
+        $identityBlocker = "Worker self-report mismatch: model=$selfModel effort=$selfEffort"
     } elseif (-not $selfModel -or -not $selfEffort) {
-        $blocker = 'Effective model/effort was not observable in the worker response'
+        $identityBlocker = 'Effective model/effort was not observable in the worker response'
     }
 
+    $status = if ($identity -eq 'VERIFIED' -and $executionStatus -eq 'COMPLETED') { 'HOST_VERIFIED' } elseif ($identity -eq 'FAIL' -or $executionStatus -eq 'BLOCKED') { 'BLOCKED' } else { 'STARTED_UNVERIFIED' }
+    $blocker = if ($executionStatus -eq 'BLOCKED') { $executionBlocker } else { $identityBlocker }
     $blocker = Protect-OutputText $blocker
     $payload = [ordered]@{
         status = $status
@@ -910,6 +955,9 @@ function Invoke-LunaTool {
         exit_code = $run.exit_code
         timed_out = $run.timed_out
         identity = $identity
+        execution_status = $executionStatus
+        execution_blocker_code = $executionBlockerCode
+        execution_blocker = Protect-OutputText $executionBlocker
         blocker = $blocker
         output = Protect-OutputText $text
         redaction = [ordered]@{
@@ -921,7 +969,7 @@ function Invoke-LunaTool {
         }
         stderr_summary = @(Get-ShortStderr $run.stderr)
     }
-    return (New-ToolResult -Payload $payload -IsError:($identity -eq 'FAIL'))
+    return (New-ToolResult -Payload $payload -IsError:($status -eq 'BLOCKED'))
 }
 
 function Get-ToolList {

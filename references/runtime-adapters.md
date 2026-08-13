@@ -65,8 +65,9 @@ current callable surfaces in this order:
    record for `luna-max-worker`.
 3. The installed `sol_luna_broker` MCP surface as an explicit managed
    transport; its default app-server route returns a host launch record and
-   can reach `HOST_VERIFIED` after the no-reroute turn check. Its legacy CLI
-   route remains `STARTED_UNVERIFIED` without host identity telemetry.
+   can reach `identity=VERIFIED` after the no-reroute check, then
+   `HOST_VERIFIED` when execution also completes. Its legacy CLI route remains
+   `STARTED_UNVERIFIED` without host identity telemetry.
 4. `collaboration.spawn_agent` only when its declared schema and model matrix
    contain the required Luna pair.
 
@@ -191,8 +192,9 @@ host observed model/effort: UNKNOWN unless the host supplies telemetry
 The default app-server broker fixes `gpt-5.6-luna / max` and starts a fresh
 ephemeral thread. Its `thread/start` response is a task-bound
 `HOST_LAUNCH_RECORD` containing host model/effort. When that record matches and
-the same turn has no `model/rerouted` event, the normalized result may be
-`HOST_VERIFIED` with proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`. Set
+the same turn has no `model/rerouted` event, identity may be `VERIFIED` with
+proof kind `ROLE_MAPPING_AND_LAUNCH_RECORD`; overall `HOST_VERIFIED` also
+requires completed execution. Set
 `SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; that route returns a
 `BROKER_RUN_RECEIPT`, has no host telemetry, and remains
 `STARTED_UNVERIFIED`. Neither route permits silent model substitution.
@@ -216,6 +218,15 @@ submitted task or authorize a duplicate submission.
 
 `HOST_JOB_RECEIPT` is a submission/lookup receipt only; it is not a substitute
 for `HOST_RECEIPT` or for the nested worker's host identity evidence.
+
+The app-server adapter keeps identity and execution as separate facts. A
+matching launch record with no `model/rerouted` event yields
+`identity=VERIFIED` even if execution is `BLOCKED`; the overall status is
+`HOST_VERIFIED` only when `execution_status=COMPLETED` as well. Timeout and turn
+errors remain execution blockers, and Windows sandbox evidence is classified as
+`WINDOWS_SANDBOX_ACL_FAILED` or `PROCESS_CREATION_DENIED`. The MCP payload
+returns `execution_status`, `execution_blocker_code`, and the output-redacted
+`execution_blocker`.
 
 The broker applies output-only privacy redaction before returning MCP content:
 Windows and Unix user-home path segments, `DESKTOP-*` host names (and the

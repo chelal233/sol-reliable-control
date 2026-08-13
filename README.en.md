@@ -22,11 +22,18 @@ only (`SOL_LUNA_TRANSPORT=cli`) and remains `STARTED_UNVERIFIED`.
 1. `TRANSPORT_VERIFIED`: the broker answered and returned a task-bound result.
 2. `HOST_LAUNCH_RECORDED`: app-server `thread/start` reported the requested
    model and effort for a fresh task-bound thread.
-3. `HOST_VERIFIED`: the same turn completed without a host reroute or
-   conflicting host identity fact.
+3. `HOST_VERIFIED`: `identity=VERIFIED` and `execution_status=COMPLETED` are
+   both true. A matching launch record with no reroute keeps identity verified
+   even when execution is independently blocked.
 
 Worker self-report, UI model pickers, and agent handles are advisory unless the
 host contract supplies authoritative evidence.
+
+The MCP payload reports redacted `execution_status`, `execution_blocker_code`,
+and `execution_blocker` facts. Windows sandbox ACL failures and denied process
+creation are classified as `WINDOWS_SANDBOX_ACL_FAILED` and
+`PROCESS_CREATION_DENIED`; neither execution failure changes verified host
+identity into an identity failure.
 
 ## Installation and MCP registration
 
