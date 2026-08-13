@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Relax broker handshakes across Windows/Linux/macOS with platform temp workdirs,
+  PATH-resolved runtimes, and structured allowed-root repair diagnostics.
 - Make the synchronous read-only app-server handshake return its task-bound
   `HOST_LAUNCH_RECORD` at `thread/start` without waiting for a worker turn.
 - Add an explicit operator-attested Desktop evidence tier for hosts that omit

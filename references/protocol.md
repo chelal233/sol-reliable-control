@@ -321,13 +321,25 @@ priority-3 `HOST_MANAGED` transport adapter:
 ```text
 sol_luna_exec({
   task_id: <stable id>,
-  workdir: <approved worktree>,
+  workdir: <approved worktree; optional for read-only handshake>,
   prompt: <compact packet>,
   sandbox: "read-only" | "workspace-write",
   handshake_only: true | false,
   execution_mode: "sync" | "async"
 })
 ```
+
+For `handshake_only=true` with no `workdir`, the broker creates a private
+platform temporary directory and does not require `SOL_LUNA_ALLOWED_ROOTS`.
+Implementation/write requests still require an existing workdir under an
+explicit allowed root. Multiple roots use the platform path separator (`;` on
+Windows, `:` on Linux/macOS). The broker accepts PowerShell 7 `pwsh` on Windows,
+Linux, and macOS; `SOL_LUNA_RUNTIME_PATH` may be an absolute path or a
+PATH-resolved command name, while `SOL_LUNA_RUNTIME_SHA256` remains mandatory.
+Configuration failures return a structured diagnostic with
+`broker_error_code`, `configuration_variable`, `reason`, `repair`, and
+`example`; allowed-root failures also include `path_separator` and
+`reload_hint`. Do not guess ACL changes from a generic path error.
 
 The default broker fixes `gpt-5.6-luna / max` and starts a fresh ephemeral
 app-server thread. Its `thread/start` response is a task-bound

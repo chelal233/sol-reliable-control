@@ -9,17 +9,84 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:BrokerName = 'sol-luna-broker'
-$script:BrokerVersion = '1.2.0'
+$script:BrokerVersion = '1.3.0'
 $script:BrokerScriptPath = $PSCommandPath
 $script:FixedModel = 'gpt-5.6-luna'
 $script:FixedEffort = 'max'
-$script:CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
-$script:LocalHostName = [string]$env:COMPUTERNAME
-$script:LocalUserName = [string]$env:USERNAME
+$script:UserHome = if ($env:USERPROFILE) { [string]$env:USERPROFILE } elseif ($env:HOME) { [string]$env:HOME } else { [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile) }
+if (-not $script:UserHome) { $script:UserHome = [System.IO.Path]::GetTempPath() }
+$script:CodexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $script:UserHome '.codex' }
+$script:LocalHostName = if ($env:COMPUTERNAME) { [string]$env:COMPUTERNAME } else { [Environment]::MachineName }
+$script:LocalUserName = if ($env:USERNAME) { [string]$env:USERNAME } else { [Environment]::UserName }
 $script:AsyncChildren = @{}
 $script:Transport = if ($env:SOL_LUNA_TRANSPORT) { $env:SOL_LUNA_TRANSPORT.ToLowerInvariant() } else { 'app-server' }
 if ($script:Transport -notin @('app-server', 'cli')) {
     throw 'SOL_LUNA_TRANSPORT must be app-server or cli'
+}
+
+function Get-PathSeparators {
+    return [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+}
+
+function Trim-DirectorySeparators {
+    param([Parameter(Mandatory = $true)] [string] $Path)
+    $root = [System.IO.Path]::GetPathRoot($Path)
+    $comparison = Get-PathComparison
+    if ($root -and $Path.Equals($root, $comparison)) { return $root }
+    $trimmed = $Path.TrimEnd((Get-PathSeparators))
+    if (-not $trimmed -and $root) { return $root }
+    return $trimmed
+}
+
+function Get-PathComparison {
+    if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+        return [StringComparison]::OrdinalIgnoreCase
+    }
+    return [StringComparison]::Ordinal
+}
+
+function Get-ConfiguredPathList {
+    param([Parameter(Mandatory = $true)] [string] $Raw)
+    $separator = [string][System.IO.Path]::PathSeparator
+    return @($Raw -split [regex]::Escape($separator) | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function Test-PathWithinRoot {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Path,
+        [Parameter(Mandatory = $true)] [string] $Root
+    )
+
+    $comparison = Get-PathComparison
+    if ($Path.Equals($Root, $comparison)) { return $true }
+    foreach ($separator in (Get-PathSeparators)) {
+        if ($Path.StartsWith($Root + [string]$separator, $comparison)) { return $true }
+    }
+    return $false
+}
+
+function Throw-BrokerDiagnostic {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Code,
+        [Parameter(Mandatory = $true)] [string] $Variable,
+        [Parameter(Mandatory = $true)] [string] $Reason,
+        [Parameter(Mandatory = $true)] [string] $Repair,
+        [string] $Example,
+        [string] $Path
+    )
+
+    $exception = [System.Exception]::new("$Code [$Variable] $Reason Fix: $Repair")
+    $exception.Data['broker_error_code'] = $Code
+    $exception.Data['configuration_variable'] = $Variable
+    $exception.Data['reason'] = $Reason
+    $exception.Data['repair'] = $Repair
+    if ($Variable -eq 'SOL_LUNA_ALLOWED_ROOTS') {
+        $exception.Data['path_separator'] = [string][System.IO.Path]::PathSeparator
+        $exception.Data['reload_hint'] = 'Reload or restart the MCP server after changing SOL_LUNA_ALLOWED_ROOTS.'
+    }
+    if ($Example) { $exception.Data['example'] = $Example }
+    if ($Path) { $exception.Data['path'] = $Path }
+    throw $exception
 }
 
 function Protect-OutputText {
@@ -35,6 +102,7 @@ function Protect-OutputText {
     # credential-shaped values before anything crosses the MCP boundary.
     $safe = [regex]::Replace($safe, '(?i)([A-Z]:\\Users\\)[^\\\r\n]+', '$1<user>')
     $safe = [regex]::Replace($safe, '(?i)(/home/)[^/\r\n]+', '$1<user>')
+    $safe = [regex]::Replace($safe, '(?<![:A-Za-z0-9/])/(?:[^/\r\n\s]+/)+[^/\r\n\s,;]+', '<path>')
     $safe = [regex]::Replace($safe, '(?i)\bDESKTOP-[A-Z0-9-]+\b', '<host>')
     if ($script:LocalHostName) {
         $safe = [regex]::Replace($safe, "(?i)(?<![A-Za-z0-9_-])$([regex]::Escape($script:LocalHostName))(?![A-Za-z0-9_-])", '<host>')
@@ -101,12 +169,23 @@ function Send-Result {
     )
 
     if ($IsError) {
+        $errorValue = if ($Result -is [System.Management.Automation.ErrorRecord]) { $Result.Exception } else { $Result }
+        $errorMessage = if ($errorValue -is [System.Exception]) { $errorValue.Message } else { [string]$errorValue }
+        $errorData = [ordered]@{}
+        if ($errorValue -is [System.Exception]) {
+            foreach ($key in @('broker_error_code', 'configuration_variable', 'reason', 'repair', 'example', 'path', 'path_separator', 'reload_hint')) {
+                if ($errorValue.Data.Contains($key)) {
+                    $errorData[$key] = Protect-OutputText ([string]$errorValue.Data[$key])
+                }
+            }
+        }
         Send-JsonLine ([ordered]@{
             jsonrpc = '2.0'
             id = $Id
             error = [ordered]@{
                 code = -32000
-                message = Protect-OutputText ([string]$Result)
+                message = Protect-OutputText $errorMessage
+                data = $errorData
             }
         })
         return
@@ -159,15 +238,37 @@ function Get-IntegerProperty {
 }
 
 function Get-RuntimePath {
-    if (-not $env:SOL_LUNA_RUNTIME_PATH) {
-        throw 'SOL_LUNA_RUNTIME_PATH must be configured explicitly; implicit runtime discovery is disabled'
+    $configured = [string]$env:SOL_LUNA_RUNTIME_PATH
+    if (-not $configured) {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_RUNTIME_PATH_MISSING' `
+            -Variable 'SOL_LUNA_RUNTIME_PATH' `
+            -Reason 'No Codex executable path or PATH command name was configured.' `
+            -Repair 'Set SOL_LUNA_RUNTIME_PATH to an absolute executable path or a command name resolvable on PATH, then set SOL_LUNA_RUNTIME_SHA256 to its approved SHA-256.' `
+            -Example 'SOL_LUNA_RUNTIME_PATH=codex (Unix/macOS) or codex.exe (Windows)'
     }
-    if (-not (Test-Path -LiteralPath $env:SOL_LUNA_RUNTIME_PATH -PathType Leaf)) {
-        throw 'SOL_LUNA_RUNTIME_PATH is not a readable file'
+
+    $candidate = $null
+    if (Test-Path -LiteralPath $configured -PathType Leaf) {
+        $candidate = $configured
+    } else {
+        $command = Get-Command -Name $configured -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command) { $candidate = $command.Source }
     }
-    $resolved = (Resolve-Path -LiteralPath $env:SOL_LUNA_RUNTIME_PATH).Path
+    if (-not $candidate -or -not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_RUNTIME_PATH_INVALID' `
+            -Variable 'SOL_LUNA_RUNTIME_PATH' `
+            -Reason "The configured executable '$configured' is not an existing file or PATH-resolvable application." `
+            -Repair 'Correct SOL_LUNA_RUNTIME_PATH, verify the executable is installed and executable, then recompute SOL_LUNA_RUNTIME_SHA256.' `
+            -Example 'Use an absolute path or a command name such as codex/codex.exe.' `
+            -Path $configured
+    }
+    $resolved = (Resolve-Path -LiteralPath $candidate).Path
     if (-not (Test-NoReparsePoints -Path $resolved)) {
-        throw 'Configured Codex runtime contains a reparse point'
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_RUNTIME_REPARSE_POINT' `
+            -Variable 'SOL_LUNA_RUNTIME_PATH' `
+            -Reason 'The resolved Codex executable or one of its parent directories is a reparse point or symlink.' `
+            -Repair 'Use the real executable path, or install the runtime in a non-reparse directory, then update the SHA-256 pin.' `
+            -Path $resolved
     }
     return $resolved
 }
@@ -178,7 +279,8 @@ function Test-NoReparsePoints {
     $current = Get-Item -LiteralPath $Path -Force
     while ($current) {
         if (($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
-        $parent = $current.Parent
+        $parentProperty = $current.PSObject.Properties['Parent']
+        $parent = if ($parentProperty) { $parentProperty.Value } else { $null }
         if ($null -eq $parent -or $parent.FullName -eq $current.FullName) { break }
         $current = $parent
     }
@@ -187,21 +289,54 @@ function Test-NoReparsePoints {
 
 function Get-AllowedRoots {
     if (-not $env:SOL_LUNA_ALLOWED_ROOTS) {
-        throw 'SOL_LUNA_ALLOWED_ROOTS must be configured; no implicit filesystem roots are used'
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_ALLOWED_ROOTS_MISSING' `
+            -Variable 'SOL_LUNA_ALLOWED_ROOTS' `
+            -Reason 'No workspace roots were configured for a file-capable task.' `
+            -Repair 'Set SOL_LUNA_ALLOWED_ROOTS to one or more dedicated workspace roots. Use the platform path separator: ; on Windows, : on Unix/macOS. Do not use a filesystem root or an entire user profile.' `
+            -Example 'Windows: E:\Sources\.codex-worktrees;E:\git\repo | Unix/macOS: /srv/codex/worktrees:/workspace/repo'
     }
     $raw = $env:SOL_LUNA_ALLOWED_ROOTS
 
-    $roots = @($raw -split ';' | Where-Object { $_ } | ForEach-Object {
+    $roots = @(Get-ConfiguredPathList -Raw $raw | ForEach-Object {
         if (-not (Test-Path -LiteralPath $_ -PathType Container)) {
-            throw 'Configured broker root does not exist'
+            Throw-BrokerDiagnostic -Code 'SOL_LUNA_ALLOWED_ROOT_INVALID_ROOT' `
+                -Variable 'SOL_LUNA_ALLOWED_ROOTS' `
+                -Reason "Configured workspace root '$_' does not exist or is not a directory." `
+                -Repair 'Create the dedicated workspace root or correct SOL_LUNA_ALLOWED_ROOTS, then restart/reload the MCP server.' `
+                -Example 'Use an existing repository/worktree parent, not the filesystem root.' `
+                -Path $_
         }
-        $resolvedRoot = (Resolve-Path -LiteralPath $_).Path.TrimEnd('\')
+        $resolvedRootRaw = (Resolve-Path -LiteralPath $_).Path
+        $rootItem = Get-Item -LiteralPath $resolvedRootRaw -Force
+        $rootFullName = [string]$rootItem.FullName
+        $filesystemRoot = if ($rootItem.PSObject.Properties['Root']) { [string]$rootItem.Root.FullName } else { [string][System.IO.Path]::GetPathRoot($rootFullName) }
+        $comparison = Get-PathComparison
+        $userHomeResolved = if ($script:UserHome -and (Test-Path -LiteralPath $script:UserHome -PathType Container)) { (Resolve-Path -LiteralPath $script:UserHome).Path } else { $null }
+        if ($rootFullName.Equals($filesystemRoot, $comparison) -or ($userHomeResolved -and $rootFullName.Equals($userHomeResolved, $comparison))) {
+            Throw-BrokerDiagnostic -Code 'SOL_LUNA_ALLOWED_ROOT_TOO_BROAD' `
+                -Variable 'SOL_LUNA_ALLOWED_ROOTS' `
+                -Reason "Configured workspace root '$rootFullName' is a filesystem root or the entire user profile." `
+                -Repair 'Use a dedicated repository/worktree parent instead of a drive root, filesystem root, or user profile.' `
+                -Example 'Windows: E:\Sources\.codex-worktrees | Unix/macOS: /srv/codex/worktrees' `
+                -Path $rootFullName
+        }
+        $resolvedRoot = Trim-DirectorySeparators -Path $rootFullName
         if (-not (Test-NoReparsePoints -Path $resolvedRoot)) {
-            throw 'Configured broker root contains a reparse point'
+            Throw-BrokerDiagnostic -Code 'SOL_LUNA_ALLOWED_ROOT_REPARSE_POINT' `
+                -Variable 'SOL_LUNA_ALLOWED_ROOTS' `
+                -Reason "Configured workspace root '$resolvedRoot' or one of its parents contains a reparse point or symlink." `
+                -Repair 'Use a real directory path without symlink/junction traversal, then update SOL_LUNA_ALLOWED_ROOTS.' `
+                -Path $resolvedRoot
         }
         $resolvedRoot
     })
-    if ($roots.Count -eq 0) { throw 'SOL_LUNA_ALLOWED_ROOTS resolved to no directories' }
+    if ($roots.Count -eq 0) {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_ALLOWED_ROOTS_EMPTY' `
+            -Variable 'SOL_LUNA_ALLOWED_ROOTS' `
+            -Reason 'The configured path list contained no usable directories.' `
+            -Repair 'Set at least one existing dedicated workspace root using the platform path separator.' `
+            -Example 'Windows: E:\Sources\.codex-worktrees | Unix/macOS: /srv/codex/worktrees'
+    }
     return $roots
 }
 
@@ -209,20 +344,93 @@ function Resolve-AllowedWorkdir {
     param([Parameter(Mandatory = $true)] [string] $Workdir)
 
     if (-not (Test-Path -LiteralPath $Workdir -PathType Container)) {
-        throw 'Workdir does not exist'
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_WORKDIR_MISSING' `
+            -Variable 'workdir' `
+            -Reason "The requested workdir '$Workdir' does not exist or is not a directory." `
+            -Repair 'Create the task worktree first, or pass an existing repository/worktree directory under SOL_LUNA_ALLOWED_ROOTS.' `
+            -Path $Workdir
     }
-    $resolved = (Resolve-Path -LiteralPath $Workdir).Path.TrimEnd('\')
+    $resolved = Trim-DirectorySeparators -Path (Resolve-Path -LiteralPath $Workdir).Path
     if (-not (Test-NoReparsePoints -Path $resolved)) {
-        throw 'Workdir contains a reparse point'
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_WORKDIR_REPARSE_POINT' `
+            -Variable 'workdir' `
+            -Reason "The requested workdir '$resolved' or one of its parents contains a reparse point or symlink." `
+            -Repair 'Use the real repository/worktree path rather than a symlink or junction.' `
+            -Path $resolved
     }
-    $matches = @(Get-AllowedRoots | Where-Object {
-        $resolved.Equals($_, [StringComparison]::OrdinalIgnoreCase) -or
-        $resolved.StartsWith($_ + '\', [StringComparison]::OrdinalIgnoreCase)
-    })
+    $matches = @(Get-AllowedRoots | Where-Object { Test-PathWithinRoot -Path $resolved -Root $_ })
     if ($matches.Count -eq 0) {
-        throw 'Workdir is outside SOL_LUNA_ALLOWED_ROOTS'
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_WORKDIR_OUTSIDE_ALLOWED_ROOTS' `
+            -Variable 'SOL_LUNA_ALLOWED_ROOTS' `
+            -Reason "The requested workdir '$resolved' is outside every configured allowed root." `
+            -Repair 'Add the worktree parent to SOL_LUNA_ALLOWED_ROOTS using the platform path separator, or pass a workdir below an existing configured root; then reload the MCP server.' `
+            -Example 'Windows: E:\Sources\.codex-worktrees;E:\git\repo | Unix/macOS: /srv/codex/worktrees:/workspace/repo' `
+            -Path $resolved
     }
     return $resolved
+}
+
+function New-HandshakeWorkdir {
+    $tempRoot = [System.IO.Path]::GetTempPath()
+    if (-not (Test-Path -LiteralPath $tempRoot -PathType Container)) {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_HANDSHAKE_TEMP_UNAVAILABLE' `
+            -Variable 'workdir' `
+            -Reason "The platform temporary directory '$tempRoot' does not exist." `
+            -Repair 'Create or configure a usable system temporary directory, then restart the MCP server.' `
+            -Path $tempRoot
+    }
+    $resolvedTempRoot = Trim-DirectorySeparators -Path (Resolve-Path -LiteralPath $tempRoot).Path
+    if (-not (Test-NoReparsePoints -Path $resolvedTempRoot)) {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_HANDSHAKE_TEMP_REPARSE_POINT' `
+            -Variable 'workdir' `
+            -Reason 'The platform temporary directory contains a reparse point or symlink.' `
+            -Repair 'Configure the platform temporary directory as a real directory, then restart the MCP server.' `
+            -Path $resolvedTempRoot
+    }
+    $name = "sol-luna-broker-handshake-$([Guid]::NewGuid().ToString('N'))"
+    $created = Join-Path $resolvedTempRoot $name
+    try {
+        [System.IO.Directory]::CreateDirectory($created) | Out-Null
+    } catch {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_HANDSHAKE_TEMP_CREATE_FAILED' `
+            -Variable 'workdir' `
+            -Reason "The broker could not create its private handshake directory '$created'." `
+            -Repair 'Check the platform temporary directory permissions or provide an explicit workdir under SOL_LUNA_ALLOWED_ROOTS.' `
+            -Path $created
+    }
+    if (-not (Test-NoReparsePoints -Path $created)) {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_HANDSHAKE_TEMP_REPARSE_POINT' `
+            -Variable 'workdir' `
+            -Reason 'The newly created handshake directory resolved through a reparse point or symlink.' `
+            -Repair 'Use a real platform temporary directory or provide an explicit allowlisted workdir.' `
+            -Path $created
+    }
+    return (Resolve-Path -LiteralPath $created).Path
+}
+
+function Get-PowerShellExecutable {
+    $configured = [string]$env:SOL_LUNA_POWERSHELL_PATH
+    if ($configured) {
+        if (Test-Path -LiteralPath $configured -PathType Leaf) {
+            return (Resolve-Path -LiteralPath $configured).Path
+        }
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_POWERSHELL_PATH_INVALID' `
+            -Variable 'SOL_LUNA_POWERSHELL_PATH' `
+            -Reason "The configured PowerShell executable '$configured' does not exist." `
+            -Repair 'Set SOL_LUNA_POWERSHELL_PATH to pwsh/pwsh.exe, or remove it to use PATH discovery.' `
+            -Path $configured
+    }
+
+    $candidates = @('pwsh', 'powershell')
+    foreach ($name in $candidates) {
+        $command = Get-Command -Name $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($command) { return $command.Source }
+    }
+    Throw-BrokerDiagnostic -Code 'SOL_LUNA_POWERSHELL_UNAVAILABLE' `
+        -Variable 'SOL_LUNA_POWERSHELL_PATH' `
+        -Reason 'No PowerShell executable was found for the asynchronous broker worker.' `
+        -Repair 'Install PowerShell 7 and ensure pwsh is on PATH, or set SOL_LUNA_POWERSHELL_PATH to its executable.' `
+        -Example 'Unix/macOS: /usr/bin/pwsh | Windows: C:\Program Files\PowerShell\7\pwsh.exe'
 }
 
 function Get-TimeoutSeconds {
@@ -637,8 +845,11 @@ function Invoke-AppServerWorker {
             $hostEffort.ToLowerInvariant() -eq $script:FixedEffort)
     }
     $contextVerified = $hostFresh -eq $true -and $hostHistoryExcluded -eq $true
-    $policyVerified = $hostCwd -and
-        $hostCwd.TrimEnd('\').Equals($Workdir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase) -and
+    $comparison = Get-PathComparison
+    $normalizedHostCwd = if ($hostCwd) { Trim-DirectorySeparators -Path $hostCwd } else { $null }
+    $normalizedWorkdir = Trim-DirectorySeparators -Path $Workdir
+    $policyVerified = $normalizedHostCwd -and
+        $normalizedHostCwd.Equals($normalizedWorkdir, $comparison) -and
         $hostSandbox -eq $Sandbox -and $hostApproval -eq 'never' -and
         $hostFallbackAllowed -eq $false
 
@@ -859,7 +1070,7 @@ function Get-CodexMessageText {
 
 function Get-FirstField {
     param(
-        [Parameter(Mandatory = $true)] [string] $Text,
+        [Parameter(Mandatory = $true)] [AllowNull()] [AllowEmptyString()] [string] $Text,
         [Parameter(Mandatory = $true)] [string] $Field
     )
 
@@ -871,7 +1082,7 @@ function Get-FirstField {
 
 function Get-FirstLabeledField {
     param(
-        [Parameter(Mandatory = $true)] [string] $Text,
+        [Parameter(Mandatory = $true)] [AllowNull()] [AllowEmptyString()] [string] $Text,
         [Parameter(Mandatory = $true)] [string] $Label
     )
 
@@ -945,7 +1156,7 @@ function Get-JobRoot {
     if (-not (Test-Path -LiteralPath $root -PathType Container)) {
         [System.IO.Directory]::CreateDirectory($root) | Out-Null
     }
-    $resolved = (Resolve-Path -LiteralPath $root).Path.TrimEnd('\')
+    $resolved = Trim-DirectorySeparators -Path (Resolve-Path -LiteralPath $root).Path
     if (-not (Test-NoReparsePoints -Path $resolved)) { throw 'SOL_LUNA_JOB_ROOT contains a reparse point' }
     return $resolved
 }
@@ -991,6 +1202,7 @@ function Start-AsyncLunaJob {
     param([Parameter(Mandatory = $true)] [object] $Arguments)
 
     $taskId = Get-TextProperty $Arguments 'task_id'
+    $workerShell = Get-PowerShellExecutable
     $jobId = [Guid]::NewGuid().ToString('N')
     $jobRoot = Get-JobRoot
     Prune-AsyncJobs -Root $jobRoot
@@ -1019,13 +1231,18 @@ function Start-AsyncLunaJob {
     Write-JobStateAtomic -Path $jobPath -State $initialState
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = Join-Path $PSHOME 'pwsh.exe'
+    $psi.FileName = $workerShell
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    foreach ($argument in @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:BrokerScriptPath, '-Worker')) {
+    $workerArguments = @('-NoProfile', '-NonInteractive')
+    if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+        $workerArguments += @('-ExecutionPolicy', 'Bypass')
+    }
+    $workerArguments += @('-File', $script:BrokerScriptPath, '-Worker')
+    foreach ($argument in $workerArguments) {
         $psi.ArgumentList.Add([string]$argument)
     }
     $psi.Environment['SOL_LUNA_WORKER_JOB_FILE'] = $jobPath
@@ -1170,7 +1387,6 @@ function Invoke-LunaTool {
     if (-not $taskId -or $taskId -notmatch '^[A-Za-z0-9._-]{1,128}$') {
         throw 'task_id must match ^[A-Za-z0-9._-]{1,128}$'
     }
-    if (-not $workdirInput) { throw 'workdir is required' }
     if (-not $prompt -or $prompt.Length -gt 20000) { throw 'prompt is required and must be <= 20000 characters' }
     if ($sandbox -notin @('read-only', 'workspace-write')) { throw 'sandbox must be read-only or workspace-write' }
     if ($handshakeOnly -and $sandbox -ne 'read-only') { throw 'handshake_only requires read-only sandbox' }
@@ -1179,7 +1395,19 @@ function Invoke-LunaTool {
         throw 'async execution is for implementation packets; run the identity-only handshake synchronously first'
     }
 
-    $workdir = Resolve-AllowedWorkdir $workdirInput
+    $workdirMode = 'ALLOWLISTED'
+    if ($workdirInput) {
+        $workdir = Resolve-AllowedWorkdir $workdirInput
+    } elseif ($handshakeOnly) {
+        $workdir = New-HandshakeWorkdir
+        $workdirMode = 'HANDSHAKE_TEMP'
+    } else {
+        Throw-BrokerDiagnostic -Code 'SOL_LUNA_WORKDIR_REQUIRED' `
+            -Variable 'workdir' `
+            -Reason 'Implementation packets need an explicit task workdir; only read-only identity handshakes may omit it.' `
+            -Repair 'Create or select the task worktree, pass it as workdir, and add its parent to SOL_LUNA_ALLOWED_ROOTS using the platform path separator.' `
+            -Example 'Windows: E:\Sources\.codex-worktrees\task | Unix/macOS: /srv/codex/worktrees/task'
+    }
     # Verify the pinned runtime before either synchronous execution or queueing
     # an asynchronous child; a job receipt must never hide a hash mismatch.
     $runtimeInfo = Get-VerifiedRuntime
@@ -1319,6 +1547,8 @@ function Invoke-LunaTool {
         host_approval = $hostApproval
         host_fallback_allowed = $hostFallbackAllowed
         sandbox = $sandbox
+        workdir_mode = $workdirMode
+        workdir = Protect-OutputText $workdir
         exit_code = $run.exit_code
         timed_out = $run.timed_out
         identity = $identity
@@ -1345,11 +1575,11 @@ function Invoke-LunaTool {
 function Get-ToolList {
     $tool = [ordered]@{
         name = 'sol_luna_exec'
-        description = 'Launch a fresh ephemeral host-managed Codex worker fixed to gpt-5.6-luna/max after explicit runtime path/SHA-256 and allowed-root checks. Use execution_mode=async for long-running implementation packets, then poll the task-bound job receipt with sol_luna_poll. The default app-server transport returns a task-bound launch record and rejects host reroutes; set SOL_LUNA_TRANSPORT=cli only for legacy diagnostic mode. This broker never changes Windows ACLs.'
+        description = 'Launch a fresh ephemeral host-managed Codex worker fixed to gpt-5.6-luna/max. Read-only handshake_only requests may omit workdir and use a private platform temp directory; implementation requests require an explicit allowlisted workdir. Runtime path/command and SHA-256 remain pinned. Use execution_mode=async for long-running implementation packets, then poll the task-bound job receipt with sol_luna_poll. This broker never changes ACLs.'
         inputSchema = [ordered]@{
             type = 'object'
             additionalProperties = $false
-            required = @('task_id', 'workdir', 'prompt')
+            required = @('task_id', 'prompt')
             properties = [ordered]@{
                 task_id = @{ type = 'string'; pattern = '^[A-Za-z0-9._-]{1,128}$' }
                 workdir = @{ type = 'string' }
@@ -1385,7 +1615,7 @@ function Get-InitializeResult {
         protocolVersion = '2024-11-05'
         capabilities = @{ tools = @{ listChanged = $false } }
         serverInfo = @{ name = $script:BrokerName; version = $script:BrokerVersion }
-        instructions = 'sol_luna_exec launches fresh gpt-5.6-luna/max only after pinned-runtime and exact-root checks. Run handshake_only=true synchronously first. For implementation packets that may exceed an MCP caller deadline, set execution_mode=async and poll the returned job_id with sol_luna_poll. The nested result records host model/effort and fresh/history/policy facts at thread/start, rejects model/rerouted events, and separates identity from execution blockers. Worker self-report is advisory; the legacy CLI transport remains STARTED_UNVERIFIED. The broker never repairs ACLs or broadens permissions.'
+        instructions = 'sol_luna_exec launches fresh gpt-5.6-luna/max with a pinned runtime. Run handshake_only=true synchronously first; workdir may be omitted because the broker uses a private platform temp directory and returns HOST_LAUNCH_RECORD without a worker turn. Implementation packets require an explicit workdir under SOL_LUNA_ALLOWED_ROOTS. For long-running implementation, set execution_mode=async and poll the returned job_id with sol_luna_poll. Configuration errors return a diagnostic code, variable, reason, repair, and example. The broker never repairs ACLs or broadens permissions.'
     }
 }
 
@@ -1468,7 +1698,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
                         throw "Unknown tool: $name"
                     }
                 } catch {
-                    Send-Result -Id $id -Result $_.Exception.Message -IsError
+                    Send-Result -Id $id -Result $_ -IsError
                 }
             }
             default {
@@ -1476,6 +1706,6 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             }
         }
     } catch {
-        if ($hasId) { Send-Result -Id $id -Result $_.Exception.Message -IsError }
+        if ($hasId) { Send-Result -Id $id -Result $_ -IsError }
     }
 }

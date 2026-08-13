@@ -76,17 +76,32 @@ Luna 模型资料、Windows sandbox 说明、上游 setup 源码和运行问题�
 
 ```toml
 [mcp_servers.sol_luna_broker]
-command = "<trusted-pwsh-path>"
-args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "<CODEX_HOME>\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
+command = "pwsh"
+args = ["-NoProfile", "-File", "<CODEX_HOME>/skills/sol-reliable-control/scripts/sol-luna-broker.ps1"]
 enabled = true
 
 [mcp_servers.sol_luna_broker.env]
 SOL_LUNA_ALLOWED_ROOTS = "<approved-phase-worktree>"
-SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable>"
+SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable-or-command>"
 SOL_LUNA_RUNTIME_SHA256 = "<64-hex-approved-sha256>"
+# Optional: set this when pwsh is not on PATH.
+# SOL_LUNA_POWERSHELL_PATH = "/usr/bin/pwsh"
 ```
 
-保存前将尖括号占位符替换为本机实际路径；broker 不再内置任何默认文件系统根目录。
+保存前将尖括号占位符替换为本机实际路径。推荐使用 PowerShell 7 `pwsh`，
+在 Windows、Linux、macOS 均可运行；也可把 `command` 换成受信任的绝对路径。
+`SOL_LUNA_RUNTIME_PATH` 可以是绝对可执行文件路径，也可以是 PATH 中的
+`codex`/`codex.exe` 命令名，但仍必须提供匹配的 SHA-256。broker 不再内置任何
+默认文件系统根目录。
+
+`SOL_LUNA_ALLOWED_ROOTS` 只对实现/写入任务强制。只读 `handshake_only=true`
+可以省略 `workdir`，broker 会创建私有平台临时目录并在 `thread/start` 后返回
+启动记录；实现任务仍必须传入位于允许根目录下的 `workdir`。多个根目录使用平台
+路径分隔符：Windows 为 `;`，Linux/macOS 为 `:`。配置错误会返回
+`broker_error_code`、`configuration_variable`、`reason`、`repair` 和 `example`，
+以及 `path_separator` 和 `reload_hint`；例如
+`SOL_LUNA_WORKDIR_OUTSIDE_ALLOWED_ROOTS` 会明确提示把 worktree 父目录加入
+允许根、使用当前平台分隔符并重载 MCP；不会打印未脱敏的凭据或完整用户路径。
 运行时路径和 SHA-256 必须成对固定，不能让 broker 自动选择“最新”可执行文件。
 app-server 只使用它公开的 `--strict-config`；CLI 专用的 ignore-config/rules
 参数不会误传给 app-server，模型、sandbox、approval 和 no-fallback 约束由

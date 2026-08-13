@@ -216,27 +216,36 @@ skill first, then add the server to the host's
 
 ```toml
 [mcp_servers.sol_luna_broker]
-command = "<trusted-pwsh-path>"
-args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "<CODEX_HOME>\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
+command = "pwsh"
+args = ["-NoProfile", "-File", "<CODEX_HOME>/skills/sol-reliable-control/scripts/sol-luna-broker.ps1"]
 enabled = true
 
 [mcp_servers.sol_luna_broker.env]
 SOL_LUNA_ALLOWED_ROOTS = "<approved-phase-worktree>"
-SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable>"
+SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable-or-command>"
 SOL_LUNA_RUNTIME_SHA256 = "<64-hex-approved-sha256>"
+# Optional when pwsh is not on PATH:
+# SOL_LUNA_POWERSHELL_PATH = "/usr/bin/pwsh"
 ```
 
 Replace every angle-bracket placeholder with an approved path before saving.
-There are no implicit filesystem roots and no machine-specific paths in this
-repository. Set `SOL_LUNA_ALLOWED_ROOTS` in the server environment when the
-configured roots do not contain the target worktree. Broker responses redact
-user-home paths, host names, and credential-shaped values before crossing the
-MCP boundary. The broker's only tool is:
+There are no implicit filesystem roots for implementation tasks and no
+machine-specific paths in this repository. A read-only `handshake_only=true`
+request may omit `workdir`; the broker creates a private platform temp
+directory. Use the platform path separator for multiple roots: `;` on Windows
+and `:` on Linux/macOS. Set
+`SOL_LUNA_ALLOWED_ROOTS` in the server environment when the configured roots do
+not contain the target worktree. Root failures return a diagnostic code,
+variable, reason, repair, and example, plus the platform `path_separator` and a
+`reload_hint`, so the caller can correct the env and reload MCP without
+guessing ACL commands. Broker responses redact user-home
+paths, host names, and credential-shaped values before crossing the MCP
+boundary. The broker's only tool is:
 
 ```text
 sol_luna_exec({
   task_id: <stable id>,
-  workdir: <approved worktree>,
+  workdir: <approved worktree; optional for read-only handshake>,
   prompt: <bounded Sol packet>,
   sandbox: "read-only" | "workspace-write",
   handshake_only: true | false

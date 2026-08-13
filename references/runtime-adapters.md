@@ -228,12 +228,21 @@ Desktop route is not eligible or has failed. Its stable tool schema is:
 ```text
 sol_luna_exec({
   task_id: <stable id>,
-  workdir: <approved worktree>,
+  workdir: <approved worktree; optional for read-only handshake>,
   prompt: <bounded packet>,
   sandbox: "read-only" | "workspace-write",
   handshake_only: true | false
 })
 ```
+
+The broker is cross-platform PowerShell 7: invoke it with `pwsh` on Windows,
+Linux, or macOS, or set `SOL_LUNA_POWERSHELL_PATH`. A read-only
+`handshake_only=true` call may omit `workdir` and receives a private temp
+directory; implementation/write calls require a workdir under
+`SOL_LUNA_ALLOWED_ROOTS`. `SOL_LUNA_RUNTIME_PATH` accepts an absolute path or a
+PATH-resolved command name, with the SHA-256 pin still required. Root and
+workdir failures return a structured repair diagnostic instead of a bare
+string; root diagnostics include the platform path separator and reload hint.
 
 The broker itself fixes `gpt-5.6-luna / max`, starts `codex exec --ephemeral`
 with user configuration ignored and strict parsing enabled, and returns:

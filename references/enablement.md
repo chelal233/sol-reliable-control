@@ -198,6 +198,13 @@ and `reasoningEffort`, then stops without dispatching `turn/start`. Record
 turn to inspect `model/rerouted` or another host conflict before promoting it
 to `HOST_VERIFIED`.
 
+The broker is not Windows-only: register it with PowerShell 7 `pwsh` on
+Windows, Linux, or macOS. A read-only handshake may omit `workdir` and uses a
+private platform temp directory. Implementation calls still require
+`SOL_LUNA_ALLOWED_ROOTS`; use `;` on Windows and `:` on Linux/macOS for
+multiple roots. Missing or invalid roots return a structured repair diagnostic
+with the exact variable and reload instruction.
+
 Never promote MCP transport success or worker self-report to `HOST_VERIFIED`.
 The host-managed route must satisfy its own independent identity proof, and
 overall `HOST_VERIFIED` still requires `execution_status=COMPLETED`.

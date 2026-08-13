@@ -265,8 +265,9 @@ labeled native. The broker must:
 - launch a fresh ephemeral app-server thread with `gpt-5.6-luna` and `max`;
 - capture the task-bound `thread/start` model/effort record and reject any
   `model/rerouted` event;
-- validate the task id, workdir, sandbox, prompt size, and allowed roots before
-  starting the process;
+- validate the task id, sandbox, prompt size, and allowed roots before starting
+  an implementation process; a read-only `handshake_only=true` probe may omit
+  `workdir` and uses a private platform temp directory;
 - require `handshake_only=true` with `read-only` sandbox before implementation;
 - return a task-bound `HOST_LAUNCH_RECORD`, runtime version/hash, and
   fresh/history facts at `thread/start` without dispatching `turn/start`; an
@@ -290,6 +291,16 @@ task-bound job until its nested worker payload is `COMPLETED` or `FAILED`. A
 caller timeout or `PENDING` result is not permission to resubmit the packet and
 is not evidence that the worker failed.
 
+The broker is PowerShell 7 based rather than Windows-only: use `pwsh` on
+Windows, Linux, or macOS, or set `SOL_LUNA_POWERSHELL_PATH` to an explicit
+PowerShell executable. `SOL_LUNA_RUNTIME_PATH` accepts an absolute executable
+path or a PATH-resolved command name, but its SHA-256 pin remains mandatory.
+`SOL_LUNA_ALLOWED_ROOTS` is required only for implementation/write work. When
+it rejects a workdir, the MCP error includes `broker_error_code`, the variable,
+reason, repair, and example; use that repair instead of guessing ACL commands.
+Allowed-root diagnostics also return the platform `path_separator` and a
+`reload_hint` so the caller can correct configuration without touching ACLs.
+
 Broker output is sanitized before it crosses the MCP boundary: user-home
 paths, host names, and credential-shaped values are redacted. This is an
 output privacy guard, not a substitute for the explicit allowed-root,
@@ -304,7 +315,7 @@ The caller invokes the fixed tool as:
 ```text
 sol_luna_exec({
   task_id: <stable id>,
-  workdir: <approved worktree>,
+  workdir: <approved worktree, optional for read-only handshake>,
   prompt: <compact Sol packet>,
   sandbox: "read-only" | "workspace-write",
   handshake_only: true | false

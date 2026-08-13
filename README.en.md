@@ -84,22 +84,29 @@ placeholder before saving; no machine-specific paths are stored in this repo.
 
 ```toml
 [mcp_servers.sol_luna_broker]
-command = "<trusted-pwsh-path>"
-args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "<CODEX_HOME>\\skills\\sol-reliable-control\\scripts\\sol-luna-broker.ps1"]
+command = "pwsh"
+args = ["-NoProfile", "-File", "<CODEX_HOME>/skills/sol-reliable-control/scripts/sol-luna-broker.ps1"]
 enabled = true
 
 [mcp_servers.sol_luna_broker.env]
 SOL_LUNA_ALLOWED_ROOTS = "<approved-phase-worktree>"
-SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable>"
+SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable-or-command>"
 SOL_LUNA_RUNTIME_SHA256 = "<64-hex-approved-sha256>"
+# Optional: set this when pwsh is not on PATH.
+# SOL_LUNA_POWERSHELL_PATH = "/usr/bin/pwsh"
 ```
 
-The broker requires explicit allowed roots and has no implicit filesystem
-roots. Restart Codex, then call `sol_luna_exec` first with
-`handshake_only=true` and `sandbox="read-only"`. MCP output redacts user-home
-paths, `DESKTOP-*` host names, and credential-shaped values.
-The runtime path and SHA-256 pin are mandatory; the broker never selects a
-different “latest” executable implicitly.
+The broker has no implicit filesystem roots for implementation tasks. Restart
+Codex, then call `sol_luna_exec` first with `handshake_only=true` and
+`sandbox="read-only"`; `workdir` may be omitted because the broker creates a
+private platform temp directory. PowerShell 7 `pwsh` is supported on Windows,
+Linux, and macOS. `SOL_LUNA_RUNTIME_PATH` may be an absolute executable path or
+a PATH-resolved `codex`/`codex.exe` command, but the SHA-256 pin remains
+mandatory. Multiple allowed roots use `;` on Windows and `:` on Linux/macOS.
+Configuration errors return a code, variable, reason, repair, and example;
+`SOL_LUNA_WORKDIR_OUTSIDE_ALLOWED_ROOTS` explains how to add the worktree parent
+and reload MCP, and scope errors also return `path_separator` and
+`reload_hint`. MCP output redacts user-home paths, host names, and credentials.
 The app-server branch sends only its documented `--strict-config` option; CLI-
 only ignore-config/rules flags are not passed to app-server. Model, sandbox,
 approval, and no-fallback constraints are checked from the task-bound
