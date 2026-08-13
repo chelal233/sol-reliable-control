@@ -18,32 +18,32 @@ workflow. When a safe host repair remains possible, return
 evidence, minimal read-only probe, and next action. Do not leave the caller
 with only “blocked” or loop on an unchanged packet.
 
-The recovery order is fixed: native handshake -> MCP handshake -> (if explicitly
-authorized) Desktop task handshake -> explicit user or host-owner approval
+The recovery order is fixed: native handshake -> (if explicitly authorized)
+Desktop task handshake -> MCP handshake -> explicit user or host-owner approval
 for the smallest registry/sandbox/token repair -> refresh/rebind. A repair still
 requires a new task's minimal PowerShell read-only probe. Do not retry the
 implementation packet until the selected probe succeeds.
 
-`LUNA_MAX` uses **Native-first -> MCP -> Desktop-task** routing. Priority 1 is a native
+`LUNA_MAX` uses **Native-first -> Desktop-task -> MCP** routing. Priority 1 is a native
 subagent surface that is visible to the current thread and matches the worker
 contract. The canonical surface is `multi_agent_v1__spawn_agent`; a future equivalent
 qualifies only if the host declares and verifies its contract, schema, requested
 model, effort, and identity evidence.
 
-After native preflight fails, use `mcp__sol_luna_broker__sol_luna_exec` as Priority
-2. Only when MCP is unavailable or fails, and the plan permits a user-owned task
-with explicit user approval, use the Desktop task as Priority 3. Otherwise skip
-it without creating a task. This MCP route is `HOST_MANAGED`: MCP is not a native subagent. It is not a silent model fallback. If all three routes
+After native preflight fails, use the explicitly approved Desktop task as Priority
+2 when the plan permits a user-owned task. If Desktop is not authorized or fails,
+use `mcp__sol_luna_broker__sol_luna_exec` as Priority 3. Otherwise skip Desktop
+without creating a task. This MCP route is `HOST_MANAGED`: MCP is not a native subagent. It is not a silent model fallback. If all three routes
 fail, retain the requested `gpt-5.6-luna / max` and return `BLOCKED` under the
 existing failure rules.
-The MCP trigger includes the case where native preflight cannot obtain the required host evidence; record that failure before selecting Priority 2.
+The MCP trigger includes the case where native preflight cannot obtain the required host evidence and the Desktop gate is not eligible or fails; record both earlier decisions before selecting Priority 3.
 
 The conditional `USER_VISIBLE_TASK` route follows the approach in
 `sol-advisor`: use the host-owned `codex_app__create_thread` surface with
 `gpt-5.6-luna / max` to create a visible task after native preflight fails. It
-is not a native sub-agent or a Luna enablement mechanism. It is attempted only
-after MCP fails, when the plan permits a user-owned task and the user has
-explicitly approved it; otherwise it is skipped.
+is not a native sub-agent or a Luna enablement mechanism. It is attempted before
+MCP when the plan permits a user-owned task and the user has explicitly approved
+it; otherwise it is skipped and MCP becomes Priority 3.
 
 This Desktop task route does not start the local Sol broker, call `setupStart`,
 run PowerShell, or change ACLs. If the host still reports
@@ -130,7 +130,7 @@ The public reference projects are
 
 Key controls are:
 
-1. Native -> MCP -> (explicitly approved) Desktop task; no implicit user-task creation.
+1. Native -> (explicitly approved) Desktop task -> MCP; no implicit user-task creation.
 2. Exact lane binding: `gpt-5.6-luna / max` and `gpt-5.6-sol / xhigh`; no silent model substitution.
 3. Independent transport, launch-identity, execution, freshness, and history gates.
 4. Project selection before Desktop tasks; projectless is handshake-only.

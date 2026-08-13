@@ -13,7 +13,7 @@ Route: DIRECT | SOL_ONLY | LUNA_MAX | SOL_XHIGH | FALLBACK
 Execution context: FRESH | CURRENT
 Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
 Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | USER_VISIBLE_TASK
-Dispatch priority: NATIVE_FIRST_THEN_MCP_THEN_DESKTOP | EXPLICIT_USER_VISIBLE_TASK
+Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP | EXPLICIT_USER_VISIBLE_TASK
 User-owned task: DENIED | ALLOWED | UNSPECIFIED
 User approval: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
@@ -41,7 +41,7 @@ is fixed: `LUNA_MAX` requests `gpt-5.6-luna / max`, and `SOL_XHIGH` requests
 `gpt-5.6-sol / xhigh`. A surface may reject that request; it may not silently
 rewrite it.
 
-For a normal `LUNA_MAX` packet, `NATIVE_FIRST_THEN_MCP_THEN_DESKTOP` is an
+For a normal `LUNA_MAX` packet, `NATIVE_FIRST_THEN_DESKTOP_THEN_MCP` is an
 ordered contract:
 
 1. Preflight and use the current-thread native subagent surface when its own
@@ -49,17 +49,18 @@ ordered contract:
    evidence match the packet. `multi_agent_v1__spawn_agent` is canonical; a
    future equivalent must be explicitly declared native and independently
    verifiable.
-2. If native preflight fails, select the `HOST_MANAGED` `sol_luna_broker` MCP
-   and record the native failure. Do not change the requested model.
-3. Only if MCP is unavailable or fails, and the plan explicitly allows a
-   user-owned task with `User approval: GRANTED`, select `USER_VISIBLE_TASK` and
-   run its handshake. `UNSPECIFIED` requires an explicit confirmation; never
-   normalize it to `DENIED` or create a task implicitly.
+2. If native preflight fails, select `USER_VISIBLE_TASK` only when the plan
+   explicitly allows a user-owned task with `User approval: GRANTED`, and run
+   its handshake. `UNSPECIFIED` requires an explicit confirmation; `DENIED`
+   skips Desktop. Never create a task implicitly.
+3. If Desktop is unavailable, not authorized, or fails, select the
+   `HOST_MANAGED` `sol_luna_broker` MCP and record the earlier route decisions.
+   Do not change the requested model.
 4. If MCP preflight also fails, return `BLOCKED` with all surface failures and
    keep the requested `gpt-5.6-luna / max` binding. No silent model fallback is
    permitted.
 
-The Desktop app task lane is therefore the conditional priority-3 step, not an
+The Desktop app task lane is therefore the conditional priority-2 step, not an
 implicit task creation. It requires `Surface: USER_VISIBLE_TASK`,
 `User-owned task: ALLOWED`, and `User approval: GRANTED`; it must never be
 created merely to prove host enablement or bypass an explicit user-owned-task
@@ -84,18 +85,18 @@ model list omits Luna, classify that candidate as unavailable and continue
 surface discovery; do not conclude that Luna is unavailable on the host if
 `multi_agent_v1__spawn_agent` is visible under another thread binding. If no
 eligible native surface is visible in the current thread, record
-    `THREAD_SURFACE_NOT_VISIBLE` and continue with priority-2 MCP preflight.
-    Consider the conditional Desktop task only after MCP is unavailable or
-    fails and the user-owned-task gate is granted.
+    `THREAD_SURFACE_NOT_VISIBLE` and evaluate the priority-2 Desktop gate.
+    If the user-owned-task gate is not granted, continue with priority-3 MCP
+    preflight.
    Return `HOST_REGISTRATION_REQUIRED` and request surface migration/rebind or a
-   fresh controller thread only when the broker is also unavailable.
+   fresh controller thread only when the priority-3 broker is also unavailable.
 
 The older `collaboration.spawn_agent` schema cannot identify itself as
 `multi_agent_v1__spawn_agent`, borrow the canonical wrapper's model matrix, or
 reuse its receipt/evidence. It qualifies as native only under its own explicit
 host declaration and verifiable contract; otherwise record the mismatch and
-advance to priority-2 MCP; consider Desktop priority 3 only after MCP fails and
-the user-owned-task gate is eligible.
+advance to the priority-2 Desktop gate; if it is not eligible or fails, continue
+to priority-3 MCP.
 
 `Luna enablement: REQUIRED` is the default deployment requirement. It means
 the host must expose the normal Luna capability even when a particular packet
@@ -112,10 +113,12 @@ Every multi-route attempt must return a compact `route_trace` in the same task
 packet. Each entry records `surface`, `priority`, `decision` (`SELECTED`,
 `SKIPPED`, `FAILED`), `reason_code`, and a task-bound receipt when one exists.
 For example, a legacy `collaboration.spawn_agent` allowlist mismatch is a
-failed native candidate, MCP is selected at priority 2, and Desktop is recorded
-as `SKIPPED` with `USER_OWNED_TASK_UNSPECIFIED` unless the caller later grants
-it. This prevents a policy sentence such as “do not use a user-owned task as an
-enablement bypass” from being mis-normalized into a blanket denial.
+failed native candidate. Desktop is recorded as `SKIPPED` with
+`USER_OWNED_TASK_UNSPECIFIED` when approval is not yet present; MCP is then
+selected at priority 3. If the caller later grants Desktop, it is evaluated at
+priority 2 before MCP. This prevents a policy sentence such as “do not use a
+user-owned task as an enablement bypass” from being mis-normalized into a
+blanket denial.
 
 ## Controller states
 
@@ -184,14 +187,16 @@ before preflight is repeated.
 gate; it is not a mechanism for hiding a missing mandatory Luna capability.
 When Luna enablement is required, `Fallback: BLOCKED` remains in force and a
 new user-owned task must not be created solely as an enablement workaround.
-That prohibition does not silently deny a legitimate Desktop route: if the
-plan reaches priority 3 after MCP failure, `User-owned task: UNSPECIFIED` must
-pause for confirmation, while `ALLOWED` plus `GRANTED` is eligible.
+That prohibition does not silently deny a legitimate Desktop route: after a
+native failure, the priority-2 Desktop gate may pause for confirmation when
+`User-owned task: UNSPECIFIED`; `ALLOWED` plus `GRANTED` is eligible. If the
+gate is not granted, continue to the priority-3 MCP route.
 
 An explicitly approved Desktop task is a separate execution choice, not host
-enablement evidence. It may be used only after the MCP route fails, when the
-caller records `User-owned task: ALLOWED` and `User approval: GRANTED`;
-`UNSPECIFIED` is not permission and must not be normalized to `DENIED`.
+enablement evidence. It may be used after native preflight fails and before MCP,
+when the caller records `User-owned task: ALLOWED` and
+`User approval: GRANTED`; `UNSPECIFIED` is not permission and must not be
+normalized to `DENIED`.
 
 ## Configuration boundary
 
@@ -295,8 +300,9 @@ failure remains an execution blocker.
 
 When native worker tools are absent from the current thread, their schema/model
 cannot express Luna/max, or native preflight cannot return the host evidence
-required by the plan, the caller selects the installed `sol_luna_broker` MCP
-server as the priority-2 `HOST_MANAGED` transport adapter:
+required by the plan, and the conditional Desktop task is not eligible or has
+failed, the caller selects the installed `sol_luna_broker` MCP server as the
+priority-3 `HOST_MANAGED` transport adapter:
 
 ```text
 sol_luna_exec({

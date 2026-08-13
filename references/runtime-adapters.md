@@ -64,12 +64,13 @@ file, or a worker's self-report cannot authorize this dispatch. For normal
    `gpt-5.6-luna / max` and its preflight supplies the required host evidence.
    A future equivalent is eligible only when the host explicitly declares a
    native contract whose schema and evidence are verifiable.
-2. **Priority 2: HOST_MANAGED MCP.** Use `sol_luna_broker` after native
-   preflight fails. Record the native decision before broker preflight.
-3. **Priority 3: USER_VISIBLE_TASK (conditional).** Only after MCP is skipped or
-   fails, and the plan explicitly allows a user-owned task with user approval,
-   use the Desktop task adapter. `UNSPECIFIED` requires confirmation; never
-   synthesize `DENIED` or create a task implicitly.
+2. **Priority 2: USER_VISIBLE_TASK (conditional).** After native preflight
+   fails, and only when the plan explicitly allows a user-owned task with user
+   approval, use the Desktop task adapter. `UNSPECIFIED` requires confirmation;
+   never synthesize `DENIED` or create a task implicitly.
+3. **Priority 3: HOST_MANAGED MCP.** Use `sol_luna_broker` when Desktop is not
+   eligible or fails. Record the native and Desktop decisions before broker
+   preflight.
 
 A separately registered `CUSTOM_ROLE` remains an explicit specialized route;
 it does not reorder this normal-dispatch ladder. If all eligible ladder
@@ -80,9 +81,10 @@ If a thread exposes only `collaboration.spawn_agent` with
 `gpt-5.6-sol`/`gpt-5.6-terra`, that candidate is unavailable, but the result
 must not be promoted to a global host verdict until all visible candidates have
 been checked. If `multi_agent_v1__spawn_agent` is visible on a sibling thread
-but not this controller, use `THREAD_SURFACE_NOT_VISIBLE`, run priority-2 MCP,
-and request a host surface migration/rebind or a fresh controller thread only
-if MCP is also unavailable and the Desktop gate is not eligible. Never
+but not this controller, use `THREAD_SURFACE_NOT_VISIBLE`, evaluate the
+priority-2 Desktop gate, and run priority-3 MCP when that gate is not eligible
+or fails. Request a host surface migration/rebind or a fresh controller thread
+only if MCP is also unavailable. Never
 transplant a sibling's `agent_id`, receipt, or self-report.
 
 ## Adapter: NATIVE_GENERIC
@@ -172,13 +174,13 @@ create a new user-owned Codex task merely to obtain a model.
 
 ## Adapter: USER_VISIBLE_TASK
 
-This is the conditional priority-3 Desktop app task adapter, based on the route
-documented by `sol-advisor`. It is part of the normal native-first -> MCP ->
-Desktop ladder and requires all of the following plan facts:
+This is the conditional priority-2 Desktop app task adapter, based on the route
+documented by `sol-advisor`. It is part of the normal native-first -> Desktop ->
+MCP ladder and requires all of the following plan facts:
 
 ```text
 Surface: USER_VISIBLE_TASK
-Dispatch priority: NATIVE_FIRST_THEN_MCP_THEN_DESKTOP
+Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP
 User-owned task: ALLOWED
 User approval: GRANTED
 Requested model/effort: gpt-5.6-luna / max
@@ -204,10 +206,11 @@ when `User-owned task` is denied.
 
 ### MCP broker variant
 
-The Sol Luna broker is a local STDIO MCP server that provides the priority-2
+The Sol Luna broker is a local STDIO MCP server that provides the priority-3
 `HOST_MANAGED` transport only when the current controller thread cannot see a
 native worker tool, the visible native schema/model mismatches Luna/max, native
-preflight cannot produce the required host evidence. Its stable tool schema is:
+preflight cannot produce the required host evidence, and the conditional
+Desktop route is not eligible or has failed. Its stable tool schema is:
 
 ```text
 sol_luna_exec({

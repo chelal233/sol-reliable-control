@@ -14,15 +14,15 @@
 - 同一问题在 `luna-max` 下超过 2 次持续审核失败，或业务不清晰反复引发回归时，停止重试并提交 `sol-xhigh` 处理。
 - 握手失败保持 `BLOCKED`，不会让 Sol 直接接管实现，也不会把失败伪装成 worker 结果。
 - `BLOCKED` 只终止当前实现派发；若仍有安全的宿主修复路径，必须向调用者返回 `HOST_REMEDIATION_REQUIRED`，明确权限申请、外部变更、最小 read-only 探针和下一步，而不是只说“等待”。
-- 恢复顺序固定为：native 握手 → MCP 握手 →（用户明确允许时）Desktop task 握手 → 用户/宿主批准最小注册或 sandbox/token 修复 → 刷新/重绑 → 必要时的新 task 最小 PowerShell 探针；探针成功前不重试实现包。
-- `LUNA_MAX` 正常调度采用“原生优先、MCP 次选、Desktop task 最后”（native-first -> MCP -> Desktop-task）：第一优先使用当前线程可见且契约匹配的 `multi_agent_v1__spawn_agent`，或未来等价、由宿主声明且可验证的 native surface。
-- native 失败后优先使用 `scripts/sol-luna-broker.ps1` 提供的第二优先 `HOST_MANAGED` MCP；只有 MCP 也不可用或失败，且用户明确批准创建可见任务时，才使用第三优先 Desktop task。MCP 不是 native subagent，也不是静默 model fallback；三条路线都不可用时保持原模型并按现有规则返回 `BLOCKED`。
+- 恢复顺序固定为：native 握手 →（用户明确允许时）Desktop task 握手 → MCP 握手 → 用户/宿主批准最小注册或 sandbox/token 修复 → 刷新/重绑 → 必要时的新 task 最小 PowerShell 探针；探针成功前不重试实现包。
+- `LUNA_MAX` 正常调度采用“原生优先、Desktop task 次选、MCP 最后”（native-first -> Desktop-task -> MCP）：第一优先使用当前线程可见且契约匹配的 `multi_agent_v1__spawn_agent`，或未来等价、由宿主声明且可验证的 native surface。
+- native 失败后，只有在计划允许 user-owned task 且用户明确批准时，才使用第二优先 Desktop task；Desktop 未获批准或握手失败后，使用第三优先 `HOST_MANAGED` MCP。MCP 不是 native subagent，也不是静默 model fallback；三条路线都不可用时保持原模型并按现有规则返回 `BLOCKED`。
 - `USER_VISIBLE_TASK` 参考 `sol-advisor` 的做法，但它不是启用 Luna 的手段；它仍需独立的 host-observed identity evidence。
 - 该桌面任务路线不启动 Sol 本地 broker、不调用 `setupStart`、不执行 PowerShell、不修改任何 ACL；若宿主仍报告 `PROCESS_CREATION_DENIED` 或 sandbox 权限错误，只记录执行阻塞并停止，不申请扩大权限。
 - `collaboration.spawn_agent` 是独立的旧/兼容 schema，不能冒充 canonical `multi_agent_v1__spawn_agent`、混用字段、借用其 capability/receipt，或把自身的 Sol/Terra 枚举当成全局能力结论。
 - broker 默认使用 app-server 的 fresh `thread/start`；若返回精确 `model=gpt-5.6-luna`、`reasoningEffort=max`，先记录为 `HOST_LAUNCH_RECORDED`，同一 turn 无 `model/rerouted` 时身份可升级为 `VERIFIED`。`SOL_LUNA_TRANSPORT=cli` 仅保留为旧版诊断路线。
 - broker 将身份与执行分开报告：匹配的 launch record 且无 reroute 时 `identity=VERIFIED`，即使执行因 Windows sandbox ACL 或进程创建拒绝而 `BLOCKED`；只有 `identity=VERIFIED` 且 `execution_status=COMPLETED` 才返回整体 `HOST_VERIFIED`。MCP payload 会给出脱敏后的 `execution_blocker_code` 与 `execution_blocker`，其中明确区分 `WINDOWS_SANDBOX_ACL_FAILED` 和 `PROCESS_CREATION_DENIED`。
-- capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到 Luna 而当前线程看不到时，记录 `THREAD_SURFACE_NOT_VISIBLE`，先检查第二优先 MCP；只有 MCP 也不可用且 Desktop 授权不明确时才要求 surface migration/rebind 或 fresh controller thread。
+- capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到 Luna 而当前线程看不到时，记录 `THREAD_SURFACE_NOT_VISIBLE`，先评估第二优先 Desktop task；Desktop 未获批准或不可用时再检查第三优先 MCP；两者都不可用时才要求 surface migration/rebind 或 fresh controller thread。
 - `FALLBACK` 是显式恢复分支：允许任意安全兼容 lane，但必须标记 `UNVERIFIED`，且只用于低风险、窄范围、可独立验证的任务。
 - 只传结构化 packet、验证摘要和 evidence 路径，不导入 worker 全量推理，避免污染主控上下文。
 - 不包含仓库操作、部署流程、项目记忆或其他 skill 的生命周期；本包可单独安装，不要求额外 skill 才能理解自身协议。
@@ -55,7 +55,7 @@ Luna 模型资料、Windows sandbox 说明、上游 setup 源码和运行问题�
 
 ## 主要事项与关键要点
 
-1. 路由顺序固定为 Native → MCP →（明确批准时）Desktop task；未批准时不创建 user-owned task。
+1. 路由顺序固定为 Native →（明确批准时）Desktop task → MCP；未批准时不创建 user-owned task。
 2. `LUNA_MAX` 始终绑定 `gpt-5.6-luna / max`，`SOL_XHIGH` 绑定 `gpt-5.6-sol / xhigh`，不静默换模型。
 3. `TRANSPORT_VERIFIED`、`HOST_LAUNCH_RECORDED`、`HOST_VERIFIED` 分层；UI、self-report、裸 `agent_id` 不能单独证明身份。
 4. Desktop task 必须选择正确项目/工作树；projectless 只用于握手，local 目录必须显式授权。
@@ -67,7 +67,7 @@ Luna 模型资料、Windows sandbox 说明、上游 setup 源码和运行问题�
 
 将仓库目录复制到 `$CODEX_HOME/skills/sol-reliable-control`，或使用 Codex skill 安装器从本仓库安装。
 
-运行时仍由宿主提供 native worker dispatch、模型身份和 `HOST_RECEIPT`；默认按 Native → MCP → Desktop task 选择 Luna/max 路线。默认 app-server 路线返回宿主 launch record；CLI 诊断路线的 receipt 和 self-report 仍按 `STARTED_UNVERIFIED` 处理，不能把“分配到 Luna”与“turn 有效身份已验证”混为一谈。
+运行时仍由宿主提供 native worker dispatch、模型身份和 `HOST_RECEIPT`；默认按 Native → Desktop task → MCP 选择 Luna/max 路线。默认 app-server 路线返回宿主 launch record；CLI 诊断路线的 receipt 和 self-report 仍按 `STARTED_UNVERIFIED` 处理，不能把“分配到 Luna”与“turn 有效身份已验证”混为一谈。
 
 ## MCP broker 注册
 

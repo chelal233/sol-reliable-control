@@ -112,11 +112,11 @@ The default Luna order is:
 
 ```text
 1. NATIVE_GENERIC / CUSTOM_ROLE native surface
-2. HOST_MANAGED sol_luna_broker MCP
-3. USER_VISIBLE_TASK Desktop task (only with explicit user approval)
+2. USER_VISIBLE_TASK Desktop task (only with explicit user approval)
+3. HOST_MANAGED sol_luna_broker MCP
 ```
 
-The third step is conditional, not an automatic user-task creation. If the
+The second step is conditional, not an automatic user-task creation. If the
 plan says `User-owned task: DENIED`, Sol skips it. If authorization is
 `UNSPECIFIED`, Sol requests confirmation rather than synthesizing a denial.
 `EXPLICIT_USER_VISIBLE_TASK` is reserved for
@@ -180,7 +180,7 @@ every route. The following matrix must be read before selecting a surface:
 | --- | --- | --- | --- |
 | Native subagent | Lowest visibility overhead; no user-owned task; best controller-context isolation | Current-thread tool may be absent; model allowlist may expose only Sol/Terra; custom role metadata may disagree with the host | Enumerate the current thread; verify exact schema, fresh semantics, receipt, and host-observed Luna/max; never borrow sibling evidence |
 | Desktop task | Uses the host's explicit Luna task surface; avoids Sol's nested local MCP broker; visible and easy for a user to inspect | Creates a user-owned task; projectless mode cannot touch a repo; project/local mode may have host sandbox limits; effective model telemetry may be absent | Require explicit approval; call `list_projects` first; prefer a fresh worktree; retain `threadId` + `hostId`; stop at `TRANSPORT_VERIFIED` when effective identity is not observable |
-| MCP broker | Stable Sol-owned schema; allowed-root validation; async receipt/polling; useful when native is unavailable | Starts a local app-server; Windows sandbox setup can fail before a command runs; caller deadline can hide a pending job; it is not native evidence | Use as priority 2; handshake synchronously, implementation asynchronously; pin runtime path/hash; never widen ACLs from Sol; poll the same job and do not duplicate packets |
+| MCP broker | Stable Sol-owned schema; allowed-root validation; async receipt/polling; useful when native and approved Desktop routes are unavailable | Starts a local app-server; Windows sandbox setup can fail before a command runs; caller deadline can hide a pending job; it is not native evidence | Use as priority 3; handshake synchronously, implementation asynchronously; pin runtime path/hash; never widen ACLs from Sol; poll the same job and do not duplicate packets |
 
 ### Problem and solution catalog
 
@@ -194,8 +194,8 @@ every route. The following matrix must be read before selecting a surface:
 the same packet.
 
 **Solution:** classify the result as thread-bound surface mismatch, record the
-exact schema, try MCP priority 2, and consider the approved Desktop task route
-only as priority 3 after MCP fails. Keep
+exact schema, evaluate the approved Desktop task route at priority 2, and use
+MCP at priority 3 when Desktop is not eligible or fails. Keep
 `LUNA_MAX` and `Fallback: BLOCKED` unchanged unless the plan explicitly allows
 a compatibility lane.
 

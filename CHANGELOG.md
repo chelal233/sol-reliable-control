@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Make native -> MCP -> explicitly approved Desktop the documented Luna route.
+- Make native -> explicitly approved Desktop -> MCP the documented Luna route.
 - Add tri-state user-owned-task authorization so missing approval is not silently
   normalized to `DENIED`.
 - Require an explicitly pinned Codex executable path and SHA-256 before launch.

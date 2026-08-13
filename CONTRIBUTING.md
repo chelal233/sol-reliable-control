@@ -7,7 +7,7 @@
 3. Do not change host ACLs, `config.toml`, custom-role files, or the installed
    runtime copy in a source change. Runtime synchronization happens only after
    review and merge.
-4. Preserve the route order: native -> MCP -> explicitly approved Desktop task.
+4. Preserve the route order: native -> explicitly approved Desktop task -> MCP.
    Do not silently substitute a model or turn an unspecified user-task decision
    into a denial.
 5. Run on Windows PowerShell:
