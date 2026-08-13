@@ -25,7 +25,7 @@ Choose the cheapest route that satisfies the task:
 - `Direct`: The request is small enough to complete without a worker.
 - `Sol-only`: Sol plans, inspects, or reviews without dispatching an executor.
 - `Sol -> luna-max`: Default for clear, bounded, independently verifiable work and difficult work whose scope remains narrow. Request `gpt-5.6-luna / max`.
-- `Sol -> sol-xhigh`: Difficult work requiring deeper reasoning, cross-cutting planning, arbitration, or final review. Request `xhigh` reasoning.
+- `Sol -> sol-xhigh`: Difficult work requiring deeper reasoning, cross-cutting planning, arbitration, or final review. Request `gpt-5.6-sol / xhigh`.
 - `luna-max -> sol-xhigh`: Escalate only when task fit or acceptance requires stronger Sol reasoning. A lane failure alone is not a reason to escalate.
 - Escalation gate: if the same issue has been rejected more than twice under `luna-max`, or unclear business semantics repeatedly cause regressions, stop retrying `luna-max` and submit the issue to `sol-xhigh` with the failure evidence.
 - `Fallback`: Use only when the requested lane cannot run and the plan explicitly permits a safe compatibility lane. The compatibility lane may be any available lane, must be labeled unverified, and may not silently replace normal routing.
@@ -79,7 +79,9 @@ For low-risk work, a valid host receipt may satisfy `HOST_DISPATCH` even when ru
 
 ## Native worker launch
 
-Prefer the host's native generic worker surface and a fresh context:
+Prefer the host's native generic worker surface and a fresh context, but run
+the capability preflight in [references/runtime-adapters.md](references/runtime-adapters.md)
+before dispatch:
 
 ```text
 agent role: generic worker
@@ -90,7 +92,29 @@ controller history: excluded
 prompt: the compact plan packet plus the result-packet rules
 ```
 
-`luna-max` and `sol-xhigh` are logical execution lanes, not required custom registrations. The `sol-xhigh` lane must request `xhigh`; if the host cannot honor it, classify the failure as `runtime` or `model_identity` and do not silently downgrade. Do not retry an unavailable custom agent type with the same packet.
+`LUNA_MAX` and `SOL_XHIGH` are logical lanes. The surface adapter resolves a
+logical route to a host schema; never assume that a lane name is a registered
+agent type. `NATIVE_GENERIC`, `CUSTOM_ROLE`, and `HOST_MANAGED` are separate
+adapters with separate evidence rules.
+
+For `NATIVE_GENERIC`, `fork_context: false` means fresh context and excluded
+controller history in the current generic spawn schema. A returned `agent_id`
+is only an `AGENT_HANDLE` unless the host explicitly labels it a task-bound
+receipt. It cannot prove model identity. `HOST_VERIFIED` requires host-observed
+model/effort evidence; a worker self-report is advisory.
+
+For `CUSTOM_ROLE`, the host must prove the registered role and launch record
+(`agent_type`, fresh fork, model, effort, and receipt). A TOML/config file alone
+is not proof. `HOST_MANAGED` is valid only when the host returns the same
+task-bound evidence. None of these adapters may be replaced by a new
+user-owned task to obtain a model.
+
+The `SOL_XHIGH` lane must request `gpt-5.6-sol / xhigh`; if the host cannot
+honor it, classify the failure as `runtime` or `model_identity` and do not
+silently downgrade. If `LUNA_MAX` is unavailable, select `SOL_XHIGH` only when
+the task-fit or repeated-failure escalation gate independently calls for it;
+otherwise preserve the plan and return `BLOCKED`. Do not retry an unavailable
+packet identically.
 
 ## Compatibility fallback
 
