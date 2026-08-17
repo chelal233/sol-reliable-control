@@ -30,7 +30,7 @@ if ($missing.Count -gt 0 -or $mismatch.Count -gt 0) {
     throw "Runtime sync mismatch: missing=$($missing.Count); mismatched=$($mismatch.Count)"
 }
 $runtimeFiles = @(Get-ChildItem -LiteralPath $RuntimeRoot -Recurse -File | ForEach-Object {
-    $_.FullName.Substring($RuntimeRoot.Length + 1).Replace('\\', '/')
+    $_.FullName.Substring($RuntimeRoot.Length + 1).Replace('\', '/')
 })
 $unexpected = @($runtimeFiles | Where-Object { $_ -notin $tracked })
 if ($unexpected.Count -gt 0) {
