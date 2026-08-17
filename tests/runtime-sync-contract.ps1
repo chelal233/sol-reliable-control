@@ -33,4 +33,8 @@ $removedBroker = Join-Path $RuntimeRoot 'scripts/sol-luna-broker.ps1'
 if (Test-Path -LiteralPath $removedBroker) {
     throw 'Runtime still contains the removed local broker script'
 }
+$removedBrokerTest = Join-Path $RuntimeRoot 'tests/broker-contract.ps1'
+if (Test-Path -LiteralPath $removedBrokerTest) {
+    throw 'Runtime still contains the removed broker contract test'
+}
 Write-Output "PASS: runtime sync contract ($($tracked.Count) tracked files)"
