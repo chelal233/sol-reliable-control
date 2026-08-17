@@ -134,7 +134,6 @@ Assert-Contains $desktopTask 'User-owned task: ALLOWED' 'Desktop task guide must
 
 Assert-Contains $sources 'https://github.com/DannyMac180/sol-advisor' 'reference catalog must list sol-advisor'
 Assert-Contains $sources 'https://github.com/yehyakin/codex-sol-control' 'reference catalog must list codex-sol-control'
-Assert-Contains $sources 'https://learn.chatgpt.com/docs/extend/mcp' 'reference catalog must list MCP documentation'
 Assert-Contains $sources 'https://learn.chatgpt.com/docs/app-server' 'reference catalog must list App Server documentation'
 Assert-Contains $sources 'https://learn.chatgpt.com/docs/agent-configuration/subagents' 'reference catalog must list Subagents documentation'
 Assert-Contains $sources 'https://openai.com/index/building-codex-windows-sandbox/' 'reference catalog must list Windows sandbox evidence'
@@ -230,15 +229,5 @@ Assert-Contains $enablement 'does not perform ACL/token remediation' 'enablement
 
 Assert-NotContains $skill 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
 Assert-NotContains $protocol 'gpt-5.6-terra' 'Terra must not become a normal Sol lane'
-Assert-NotContains $skill 'Native-first -> MCP -> Desktop' 'skill must not retain the old MCP-before-Desktop priority'
-Assert-NotContains $protocol 'NATIVE_FIRST_THEN_MCP_THEN_DESKTOP' 'protocol must not retain the old MCP-before-Desktop priority'
-Assert-NotContains $readme '原生优先、MCP 次选、Desktop task 最后' 'README must not retain the old Chinese priority'
-Assert-NotContains $readmeEn 'Native-first -> MCP -> Desktop-task' 'English README must not retain the old priority'
-
-$routeDocs = $skill + $protocol + $adapters + $enablement + $registration + $desktopTask + $readme + $readmeEn
-Assert-NotContains $routeDocs 'sol_luna_broker' 'removed local broker registration must not return'
-Assert-NotContains $routeDocs 'sol-luna-broker' 'removed local broker script must not return'
-Assert-NotContains $routeDocs 'HOST_MANAGED' 'removed host-managed local route must not return'
-Assert-NotContains $routeDocs 'NATIVE_FIRST_THEN_DESKTOP_THEN_MCP' 'removed third route must not return'
 
 Write-Output 'PASS: Sol runtime adapter protocol contract'

@@ -29,12 +29,11 @@ foreach ($relative in $tracked) {
 if ($missing.Count -gt 0 -or $mismatch.Count -gt 0) {
     throw "Runtime sync mismatch: missing=$($missing.Count); mismatched=$($mismatch.Count)"
 }
-$removedBroker = Join-Path $RuntimeRoot 'scripts/sol-luna-broker.ps1'
-if (Test-Path -LiteralPath $removedBroker) {
-    throw 'Runtime still contains the removed local broker script'
-}
-$removedBrokerTest = Join-Path $RuntimeRoot 'tests/broker-contract.ps1'
-if (Test-Path -LiteralPath $removedBrokerTest) {
-    throw 'Runtime still contains the removed broker contract test'
+$runtimeFiles = @(Get-ChildItem -LiteralPath $RuntimeRoot -Recurse -File | ForEach-Object {
+    $_.FullName.Substring($RuntimeRoot.Length + 1).Replace('\\', '/')
+})
+$unexpected = @($runtimeFiles | Where-Object { $_ -notin $tracked })
+if ($unexpected.Count -gt 0) {
+    throw "Runtime sync mismatch: unexpected=$($unexpected.Count)"
 }
 Write-Output "PASS: runtime sync contract ($($tracked.Count) tracked files)"

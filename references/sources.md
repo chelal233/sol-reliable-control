@@ -15,7 +15,6 @@ legacy worktrees, or depend on them for execution.
 
 - Project: [sol-advisor](https://github.com/DannyMac180/sol-advisor)
 - Orchestration contract: [orchestration/SKILL.md](https://raw.githubusercontent.com/DannyMac180/sol-advisor/main/plugins/sol-advisor/skills/orchestration/SKILL.md)
-- MCP configuration server: [server.ts](https://raw.githubusercontent.com/DannyMac180/sol-advisor/main/plugins/sol-advisor/mcp/server.ts)
 - Native Sol reviewer role: [sol-advisor-sol-reviewer.toml](https://raw.githubusercontent.com/DannyMac180/sol-advisor/main/plugins/sol-advisor/agents/sol-advisor-sol-reviewer.toml)
 - Native Terra implementer role: [sol-advisor-terra-implementer.toml](https://raw.githubusercontent.com/DannyMac180/sol-advisor/main/plugins/sol-advisor/agents/sol-advisor-terra-implementer.toml)
 
@@ -25,7 +24,7 @@ Sol uses this project as the reference for:
    separate.
 2. Treating Luna as an explicit, visible Codex app-task lane rather than
    pretending that a native Sol/Terra role is Luna.
-3. Keeping MCP configuration/consent management separate from task execution.
+3. Keeping host registration and consent management separate from task execution.
 4. Loading a role only when the host reports that the role is actually
    registered.
 
@@ -48,8 +47,6 @@ worktree is a runtime dependency.
 
 ### Host surfaces and protocols
 
-- [MCP](https://learn.chatgpt.com/docs/extend/mcp): external tool-server
-  registration and tool-call boundary.
 - [App Server](https://learn.chatgpt.com/docs/app-server): host-managed task and
   turn transport concepts.
 - [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents):
@@ -149,7 +146,7 @@ authorizes resubmitting the same implementation packet.
   or modifies unrelated directories as part of a Luna route.
 - Workdir and project targets must be explicit; projectless Desktop tasks are
   handshake-only and cannot access a local repository.
-- Broker output redacts user-home paths, host names, and credential-shaped
+- Host-task output redacts user-home paths, host names, and credential-shaped
   values before crossing a task boundary.
 - Packets contain compact scope, exclusions, verification, and evidence paths;
   they do not contain private reasoning, full transcripts, credentials, or old

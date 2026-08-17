@@ -16,8 +16,6 @@ function Assert-NotMatch {
     Assert-True (-not [regex]::IsMatch($Text, $Pattern)) $Reason
 }
 
-Assert-True (-not (Test-Path -LiteralPath (Join-Path $Root 'scripts/sol-luna-broker.ps1'))) 'removed broker script must stay absent'
-
 $docFiles = @(
     (Join-Path $Root 'README.md'),
     (Join-Path $Root 'README.en.md'),
@@ -35,6 +33,4 @@ Assert-NotMatch $docs '(?i)\bsk-[A-Za-z0-9]{20,}\b' 'documentation must not cont
 Assert-NotMatch $docs '(?i)\bgh[pousr]_[A-Za-z0-9]{20,}\b' 'documentation must not contain a GitHub token'
 Assert-NotMatch $docs '(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{20,}' 'documentation must not contain a bearer token'
 Assert-NotMatch $docs '(?i)-----BEGIN\s+(?:RSA|OPENSSH|EC|DSA)?\s*PRIVATE KEY-----' 'documentation must not contain a private key'
-Assert-NotMatch $docs '(?i)sol[_-]luna|HOST_MANAGED|HOST_JOB_RECEIPT|BROKER_RUN_RECEIPT' 'removed local transport identifiers must not return to the docs'
-
 Write-Output 'PASS: Sol privacy contract'

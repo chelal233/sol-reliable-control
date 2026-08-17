@@ -334,8 +334,6 @@ Routing verdict: HOST_VERIFIED | HOST_LAUNCH_RECORDED | OPERATOR_UI_ATTESTED | H
 Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
 Operator attestation: GRANTED | NOT_GRANTED | UNKNOWN
 Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
-Broker execution_status: COMPLETED | FAILED | NOT_STARTED | UNKNOWN
-Broker failure code: <concrete code or None>
 Self-report warning: NONE | MISMATCH | UNKNOWN
 Evidence: <artifact or result path bound to the acceptance conditions>
 Review verdict: PASS | FIX | BLOCKED | NOT_RUN
