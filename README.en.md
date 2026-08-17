@@ -19,12 +19,12 @@ evidence, minimal read-only probe, and next action. Do not leave the caller
 with only “blocked” or loop on an unchanged packet.
 
 The recovery order is fixed: native handshake -> (if explicitly authorized)
-Desktop task handshake -> MCP handshake -> explicit user or host-owner approval
-for the smallest registry/sandbox/token repair -> refresh/rebind. A repair still
-requires a new task's minimal PowerShell read-only probe. Do not retry the
-implementation packet until the selected probe succeeds.
+Desktop task handshake -> explicit user or host-owner approval for the smallest
+role/registry repair -> refresh/rebind. A repair still requires a new task's
+minimal read-only probe. Do not retry the implementation packet until the
+selected probe succeeds.
 
-`LUNA_MAX` uses **Native-first -> Desktop-task -> MCP** routing. Priority 1 is a native
+`LUNA_MAX` uses **Native-first -> Desktop-task** routing. Priority 1 is a native
 subagent surface that is visible to the current thread and matches the worker
 contract. The canonical surface is `multi_agent_v1__spawn_agent`; a future equivalent
 qualifies only if the host declares and verifies its contract, schema, requested
@@ -32,95 +32,44 @@ model, effort, and identity evidence.
 
 After native preflight fails, use the explicitly approved Desktop task as Priority
 2 when the plan permits a user-owned task. If Desktop is not authorized or fails,
-use `mcp__sol_luna_broker__sol_luna_exec` as Priority 3. Otherwise skip Desktop
-without creating a task. This MCP route is `HOST_MANAGED`: MCP is not a native subagent. It is not a silent model fallback. If all three routes
-fail, retain the requested `gpt-5.6-luna / max` and return `BLOCKED` under the
-existing failure rules.
-The MCP trigger includes the case where native preflight cannot obtain the required host evidence and the Desktop gate is not eligible or fails; record both earlier decisions before selecting Priority 3.
+retain the requested `gpt-5.6-luna / max` and return `BLOCKED` with a concrete
+host-registration action. Never create a hidden or local alternate transport.
 
 The conditional `USER_VISIBLE_TASK` route follows the approach in
 `sol-advisor`: use the host-owned `codex_app__create_thread` surface with
 `gpt-5.6-luna / max` to create a visible task after native preflight fails. It
-is not a native sub-agent or a Luna enablement mechanism. It is attempted before
-MCP when the plan permits a user-owned task and the user has explicitly approved
-it; otherwise it is skipped and MCP becomes Priority 3.
+is not a native sub-agent or a Luna enablement mechanism. It is attempted as
+priority 2 when the plan permits a user-owned task and the user has explicitly
+approved it; otherwise it is skipped and the task remains `BLOCKED`.
 
-This Desktop task route does not start the local Sol broker, call `setupStart`,
-run PowerShell, or change ACLs. If the host still reports
+This Desktop task route does not call `setupStart`, run PowerShell, or change
+ACLs. If the host still reports
 `PROCESS_CREATION_DENIED` or a sandbox permission error, record the execution
 blocker and stop; do not broaden permissions.
 
-The managed MCP broker starts a fresh ephemeral app-server thread and captures
-the host launch record. With `handshake_only=true`, it returns immediately after
-`thread/start` without sending `turn/start`, so a worker PowerShell/sandbox
-fault cannot hide the record until the 300-second deadline. A later turn is
-still required to reject `model/rerouted` and reach `HOST_VERIFIED`. The legacy
-CLI transport is diagnostic only (`SOL_LUNA_TRANSPORT=cli`) and remains
-`STARTED_UNVERIFIED`.
-
 ## Three-layer verification
 
-1. `TRANSPORT_VERIFIED`: the broker answered and returned a task-bound result.
-2. `HOST_LAUNCH_RECORDED`: app-server `thread/start` reported the requested
-   model and effort for a fresh task-bound thread.
-3. `HOST_VERIFIED`: `identity=VERIFIED` and `execution_status=COMPLETED` are
-   both true. A matching launch record with no reroute keeps identity verified
-   even when execution is independently blocked.
+1. `TRANSPORT_VERIFIED`: the native or Desktop surface returned a task-bound result.
+2. `HOST_LAUNCH_RECORDED`: the host reported the requested model and effort for
+   a fresh task-bound thread.
+3. `HOST_VERIFIED`: identity and execution gates both pass. A matching launch
+   record without effective telemetry remains `HOST_MODEL_UNOBSERVABLE`.
 
 Worker self-report, UI model pickers, and agent handles are advisory unless the
 host contract supplies authoritative evidence.
 
-The MCP payload reports redacted `execution_status`, `execution_blocker_code`,
-and `execution_blocker` facts. Windows sandbox ACL failures and denied process
-creation are classified as `WINDOWS_SANDBOX_ACL_FAILED` and
-`PROCESS_CREATION_DENIED`; neither execution failure changes verified host
-identity into an identity failure.
+Execution blockers such as denied process creation remain separate from model
+identity; they do not authorize a model substitution or a permission expansion.
 
-## Installation and MCP registration
+## Installation and host registration
 
-Install this directory under `$CODEX_HOME/skills/sol-reliable-control`, then add
-the following to `$CODEX_HOME/config.toml`. Replace every angle-bracket
-placeholder before saving; no machine-specific paths are stored in this repo.
-
-```toml
-[mcp_servers.sol_luna_broker]
-command = "pwsh"
-args = ["-NoProfile", "-File", "<CODEX_HOME>/skills/sol-reliable-control/scripts/sol-luna-broker.ps1"]
-enabled = true
-
-[mcp_servers.sol_luna_broker.env]
-SOL_LUNA_ALLOWED_ROOTS = "<approved-phase-worktree>"
-SOL_LUNA_RUNTIME_PATH = "<trusted-codex-executable-or-command>"
-SOL_LUNA_RUNTIME_SHA256 = "<64-hex-approved-sha256>"
-# Optional: set this when pwsh is not on PATH.
-# SOL_LUNA_POWERSHELL_PATH = "/usr/bin/pwsh"
-```
-
-The broker has no implicit filesystem roots for implementation tasks. Restart
-Codex, then call `sol_luna_exec` first with `handshake_only=true` and
-`sandbox="read-only"`; `workdir` may be omitted because the broker creates a
-private platform temp directory. PowerShell 7 `pwsh` is supported on Windows,
-Linux, and macOS. `SOL_LUNA_RUNTIME_PATH` may be an absolute executable path or
-a PATH-resolved `codex`/`codex.exe` command, but the SHA-256 pin remains
-mandatory. Multiple allowed roots use `;` on Windows and `:` on Linux/macOS.
-Configuration errors return a code, variable, reason, repair, and example;
-`SOL_LUNA_WORKDIR_OUTSIDE_ALLOWED_ROOTS` explains how to add the worktree parent
-and reload MCP, and scope errors also return `path_separator` and
-`reload_hint`. MCP output redacts user-home paths, host names, and credentials.
-The app-server branch sends only its documented `--strict-config` option; CLI-
-only ignore-config/rules flags are not passed to app-server. Model, sandbox,
-approval, and no-fallback constraints are checked from the task-bound
-`thread/start` facts.
-
-For implementation packets that may exceed the caller's MCP deadline, keep the
-identity handshake synchronous, then submit the packet with
-`execution_mode="async"`. Submission immediately returns a task-bound
-`HOST_JOB_RECEIPT` and `job_id` while a fresh Luna/max worker continues in the
-background. Poll with `sol_luna_poll(task_id, job_id, wait_seconds)`. Only the
-nested worker payload is the final result; evaluate its `HOST_LAUNCH_RECORD`,
-`HOST_VERIFIED`, or `BLOCKED` state using the normal identity gate. A single
-`tools/call` timeout is not proof that the worker failed, and the same packet
-must not be submitted again.
+Install this directory under `$CODEX_HOME/skills/sol-reliable-control`. Luna/max
+model availability and worker registration belong to the Codex host. The skill
+does not register a local transport or alter filesystem permissions. After a
+host-side role or model-registry change, reload the owning process, re-enumerate
+the current thread's worker surface, and run a fresh handshake before sending
+implementation instructions. A local TOML role file or UI picker is not a
+task-bound identity receipt.
 
 Before public distribution, the repository owner must choose and add a
 `LICENSE`. This project does not infer a license from the reference projects or
@@ -140,19 +89,18 @@ The public reference projects are
 
 Key controls are:
 
-1. Native -> (explicitly approved) Desktop task -> MCP; no implicit user-task creation.
+1. Native -> (explicitly approved) Desktop task; no implicit user-task creation.
 2. Exact lane binding: `gpt-5.6-luna / max` and `gpt-5.6-sol / xhigh`; no silent model substitution.
 3. Independent transport, launch-identity, execution, freshness, and history gates; `HOST_MODEL_UNOBSERVABLE` is not `HOST_MODEL_MISMATCH`.
 4. A Desktop GUI picker is not host identity evidence by default; an explicitly approved `OPERATOR_ATTESTED` plan may record `OPERATOR_UI_ATTESTED` with `Identity: ATTESTED`, never `HOST_VERIFIED`.
 5. Project selection before Desktop tasks; projectless is handshake-only.
 6. No Sol-owned ACL/token repair or broad permission changes after sandbox failures.
-7. Same-job polling after MCP timeouts; no duplicate implementation packet.
-8. Source/runtime hash equality and privacy/protocol/broker tests before publication.
+7. Bind timeout recovery to the same task receipt; no duplicate implementation packet.
+8. Source/runtime hash equality and privacy/protocol tests before publication.
 
 ## Verification
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File tests/broker-contract.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/protocol-contract.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/privacy-contract.ps1
 ```
@@ -160,9 +108,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests/privacy-contract.ps1
 See [SKILL.md](SKILL.md) and the files under `references/` for the complete
 protocol and registration rules, including
 [references/desktop-task-lane.md](references/desktop-task-lane.md) for the
-explicit Desktop Luna task route. The broker implementation is
-[`scripts/sol-luna-broker.ps1`](scripts/sol-luna-broker.ps1); its `sol_luna_exec`
-and `sol_luna_poll` tools share task-bound receipts and the same redaction gate.
+explicit Desktop Luna task route. No local alternate transport is installed by
+this skill.
 
 The complete reference catalog, trade-offs, failure modes, mitigations, and
 GitHub publication checklist are in

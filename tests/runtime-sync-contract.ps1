@@ -29,4 +29,8 @@ foreach ($relative in $tracked) {
 if ($missing.Count -gt 0 -or $mismatch.Count -gt 0) {
     throw "Runtime sync mismatch: missing=$($missing.Count); mismatched=$($mismatch.Count)"
 }
+$removedBroker = Join-Path $RuntimeRoot 'scripts/sol-luna-broker.ps1'
+if (Test-Path -LiteralPath $removedBroker) {
+    throw 'Runtime still contains the removed local broker script'
+}
 Write-Output "PASS: runtime sync contract ($($tracked.Count) tracked files)"

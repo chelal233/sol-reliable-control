@@ -3,18 +3,18 @@
 This adapter documents the route used by clients such as
 [sol-advisor](https://github.com/DannyMac180/sol-advisor): Luna is started as an
 explicit, user-visible Codex task through the Codex app task surface instead of
-as a local MCP child process. It is a separate host surface, not a native
+as a hidden local child process. It is a separate host surface, not a native
 subagent and not an enablement workaround.
 
 ## When it is allowed
 
-The normal Sol ladder is **native Luna -> Desktop task -> managed MCP**. The
+The normal Sol ladder is **native Luna -> Desktop task**. The
 Desktop step is conditional: after native preflight fails, it is attempted only
 when all of these fields are present in the plan:
 
 ```text
 Surface: USER_VISIBLE_TASK
-Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP
+Dispatch priority: NATIVE_FIRST_THEN_DESKTOP
 User-owned task: ALLOWED
 User approval: GRANTED
 Requested model/effort: gpt-5.6-luna / max
@@ -25,9 +25,9 @@ Controller history: EXCLUDED
 Do not create this task merely to register or prove that Luna exists. A packet
 with `User-owned task: DENIED` must not use this adapter. If authorization is
 `UNSPECIFIED`, pause and request confirmation; only `ALLOWED` plus
-`User approval: GRANTED` is eligible. The native/MCP contract stays in force
-until that confirmation exists; when the gate is not granted, continue to the
-priority-3 MCP route.
+`User approval: GRANTED` is eligible. The native contract stays in force until
+that confirmation exists; when the gate is not granted, the task remains
+`BLOCKED`.
 
 ## Host call sequence
 
@@ -68,9 +68,8 @@ authorized, uses `codex_app__send_message_to_thread` with the same ids and
 
 ## Evidence gates
 
-The app task surface has the same independent transport, identity, execution,
-freshness, and history gates as the MCP broker, plus one explicit operator
-attestation tier:
+The app task surface has independent transport, identity, execution, freshness,
+and history gates, plus one explicit operator attestation tier:
 
 1. `TRANSPORT_VERIFIED`: `create_thread` returned a ready `threadId` and
    `hostId`, and the task can be observed by the host.
@@ -115,7 +114,7 @@ task scope to the approved project/worktree and do not include credentials,
 user-home paths, host names, or full transcripts.
 
 This route is intentionally visible in the user's task list. That visibility is
-the trade-off for avoiding a nested local MCP process. It is not a background
+the trade-off for avoiding a hidden local process. It is not a background
 subagent. If the user-owned-task gate is denied, the controller skips this
-conditional priority-2 step. If the Desktop handshake fails, continue to the
-priority-3 MCP route.
+conditional priority-2 step. If the Desktop handshake fails, return `BLOCKED`
+with a host-registration action.

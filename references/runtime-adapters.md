@@ -24,13 +24,13 @@ Task packet: <bounded plan packet>
 The adapter returns these facts before execution is authorized:
 
 ```text
-Surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED | USER_VISIBLE_TASK | UNKNOWN
+Surface: NATIVE_GENERIC | CUSTOM_ROLE | USER_VISIBLE_TASK | UNKNOWN
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
 Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
-Dispatch receipt kind: HOST_RECEIPT | HOST_JOB_RECEIPT | AGENT_HANDLE | UNKNOWN
+Dispatch receipt kind: HOST_RECEIPT | AGENT_HANDLE | UNKNOWN
 Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | OPERATOR_UI_ATTESTATION | SELF_REPORT_ONLY | UNKNOWN
 Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
 Operator attestation: GRANTED | NOT_GRANTED | UNKNOWN
@@ -61,7 +61,7 @@ fallback.
 Capability is scoped to the controller thread and host that will perform the
 dispatch. A capability list captured in another thread, a UI picker, a role
 file, or a worker's self-report cannot authorize this dispatch. For normal
-`LUNA_MAX`, apply this three-level ladder:
+`LUNA_MAX`, apply this two-level ladder:
 
 1. **Priority 1: current-thread native.** Use
    `multi_agent_v1__spawn_agent` when its model/effort matrix contains
@@ -72,9 +72,8 @@ file, or a worker's self-report cannot authorize this dispatch. For normal
    fails, and only when the plan explicitly allows a user-owned task with user
    approval, use the Desktop task adapter. `UNSPECIFIED` requires confirmation;
    never synthesize `DENIED` or create a task implicitly.
-3. **Priority 3: HOST_MANAGED MCP.** Use `sol_luna_broker` when Desktop is not
-   eligible or fails. Record the native and Desktop decisions before broker
-   preflight.
+3. If Desktop is not eligible or fails, preserve the requested lane and return
+   `BLOCKED` with a host-registration action. Do not start a hidden transport.
 
 A separately registered `CUSTOM_ROLE` remains an explicit specialized route;
 it does not reorder this normal-dispatch ladder. If all eligible ladder
@@ -86,9 +85,8 @@ If a thread exposes only `collaboration.spawn_agent` with
 must not be promoted to a global host verdict until all visible candidates have
 been checked. If `multi_agent_v1__spawn_agent` is visible on a sibling thread
 but not this controller, use `THREAD_SURFACE_NOT_VISIBLE`, evaluate the
-priority-2 Desktop gate, and run priority-3 MCP when that gate is not eligible
-or fails. Request a host surface migration/rebind or a fresh controller thread
-only if MCP is also unavailable. Never
+priority-2 Desktop gate. Request a host surface migration/rebind or a fresh
+controller thread when no eligible surface remains. Never
 transplant a sibling's `agent_id`, receipt, or self-report.
 
 ## Adapter: NATIVE_GENERIC
@@ -167,24 +165,15 @@ The presence of `.codex/agents/*.toml`, a role name, or a child self-report is
 not enough: TOML/config alone is not proof. A role that the current host does
 not advertise is `UNAVAILABLE`, even if the file exists in a repository.
 
-## Adapter: HOST_MANAGED
-
-Some hosts launch the selected worker internally from the Sol plan instead of
-exposing either a generic model override or a custom role. This adapter is
-valid only when the host returns the same normalized evidence: a task-bound
-`HOST_RECEIPT`, fresh-context proof, controller-history proof, and host-owned
-identity evidence. It is an internal dispatch surface, not permission to
-create a new user-owned Codex task merely to obtain a model.
-
 ## Adapter: USER_VISIBLE_TASK
 
 This is the conditional priority-2 Desktop app task adapter, based on the route
-documented by `sol-advisor`. It is part of the normal native-first -> Desktop ->
-MCP ladder and requires all of the following plan facts:
+documented by `sol-advisor`. It is part of the normal native-first -> Desktop
+ladder and requires all of the following plan facts:
 
 ```text
 Surface: USER_VISIBLE_TASK
-Dispatch priority: NATIVE_FIRST_THEN_DESKTOP_THEN_MCP
+Dispatch priority: NATIVE_FIRST_THEN_DESKTOP
 User-owned task: ALLOWED
 User approval: GRANTED
 Requested model/effort: gpt-5.6-luna / max
@@ -204,8 +193,8 @@ The app task host must independently report effective model/effort and the
 fresh/history facts before the result can reach `HOST_VERIFIED`. If it reports
 `PROCESS_CREATION_DENIED`, `WINDOWS_SANDBOX_ACL_FAILED`, or another permission
 failure, keep identity and execution separate and stop. This adapter never
-starts the local Sol broker, invokes `setupStart`, changes ACLs, or broadens
-permissions. It is not a native subagent and it must not be silently selected
+invokes `setupStart`, changes ACLs, or broadens permissions. It is not a native
+subagent and it must not be silently selected
 when `User-owned task` is denied.
 
 If the Desktop host omits effective model/effort telemetry, return
@@ -217,98 +206,14 @@ user must confirm the live GUI for the exact `threadId`/`hostId` shows
 `Routing verdict: OPERATOR_UI_ATTESTED`. This evidence tier never satisfies
 `HOST_VERIFIED` and cannot be silently substituted for it.
 
-### MCP broker variant
+## After native and Desktop preflight
 
-The Sol Luna broker is a local STDIO MCP server that provides the priority-3
-`HOST_MANAGED` transport only when the current controller thread cannot see a
-native worker tool, the visible native schema/model mismatches Luna/max, native
-preflight cannot produce the required host evidence, and the conditional
-Desktop route is not eligible or has failed. Its stable tool schema is:
-
-```text
-sol_luna_exec({
-  task_id: <stable id>,
-  workdir: <approved worktree; optional for read-only handshake>,
-  prompt: <bounded packet>,
-  sandbox: "read-only" | "workspace-write",
-  handshake_only: true | false
-})
-```
-
-The broker is cross-platform PowerShell 7: invoke it with `pwsh` on Windows,
-Linux, or macOS, or set `SOL_LUNA_POWERSHELL_PATH`. A read-only
-`handshake_only=true` call may omit `workdir` and receives a private temp
-directory; implementation/write calls require a workdir under
-`SOL_LUNA_ALLOWED_ROOTS`. `SOL_LUNA_RUNTIME_PATH` accepts an absolute path or a
-PATH-resolved command name, with the SHA-256 pin still required. Root and
-workdir failures return a structured repair diagnostic instead of a bare
-string; root diagnostics include the platform path separator and reload hint.
-
-The broker itself fixes `gpt-5.6-luna / max`, starts `codex exec --ephemeral`
-with user configuration ignored and strict parsing enabled, and returns:
-
-```text
-surface: HOST_MANAGED
-receipt kind: BROKER_RUN_RECEIPT
-fresh: true
-history: EXCLUDED
-identity proof kind: SELF_REPORT_ONLY | UNKNOWN
-host observed model/effort: UNKNOWN unless the host supplies telemetry
-```
-
-The default app-server broker fixes `gpt-5.6-luna / max` and starts a fresh
-ephemeral thread. Its `thread/start` response is a task-bound
-`HOST_LAUNCH_RECORD` containing host model/effort. With
-`handshake_only=true`, the broker returns after `thread/start` and does not
-send `turn/start`; this is launch evidence with `execution_status=NOT_STARTED`,
-not a completed worker turn. A later matching turn with no `model/rerouted`
-event may yield `identity=VERIFIED` with proof kind
-`ROLE_MAPPING_AND_LAUNCH_RECORD`; overall `HOST_VERIFIED` also requires
-completed execution. Set
-`SOL_LUNA_TRANSPORT=cli` only for legacy diagnostics; that route returns a
-`BROKER_RUN_RECEIPT`, has no host telemetry, and remains
-`STARTED_UNVERIFIED`. Neither route permits silent model substitution.
-
-The app-server `thread/start` response is a distinct host-managed launch
-record. It may be accepted as `ROLE_MAPPING_AND_LAUNCH_RECORD` only when all
-of these fields are captured from the same fresh ephemeral launch: exact
-requested `model`, exact `reasoningEffort`, and task-bound thread id. The
-identity-only handshake has no turn to inspect for reroute; a later turn is
-required for `HOST_VERIFIED`. A launch record that is followed by a host
-reroute or another host-effective identity fact is `HOST_MODEL_MISMATCH`, not
-verified. A worker's generic self-report is advisory and does not override the
-host launch record.
-
-The broker does not become a native surface and does not change the requested
-model. Transport success, a broker receipt, or worker self-report alone is not
-`HOST_VERIFIED`; apply the host-managed evidence and execution gates below.
-
-Long-running implementation packets use the broker's asynchronous variant:
-`sol_luna_exec(execution_mode=async)` returns a task-bound `HOST_JOB_RECEIPT`
-and `job_id` without holding the MCP call open. `sol_luna_poll` retrieves the
-completed nested worker payload. The job receipt proves submission and fresh
-context only; the nested app-server launch record still must satisfy the normal
-`HOST_VERIFIED` gate. A caller deadline therefore does not discard an already
-submitted task or authorize a duplicate submission.
-
-`HOST_JOB_RECEIPT` is a submission/lookup receipt only; it is not a substitute
-for `HOST_RECEIPT` or for the nested worker's host identity evidence.
-
-The app-server adapter keeps identity and execution as separate facts. A
-matching launch record with no `model/rerouted` event yields
-`identity=VERIFIED` even if execution is `BLOCKED`; the overall status is
-`HOST_VERIFIED` only when `execution_status=COMPLETED` as well. Timeout and turn
-errors remain execution blockers, and Windows sandbox evidence is classified as
-`WINDOWS_SANDBOX_ACL_FAILED` or `PROCESS_CREATION_DENIED`. The MCP payload
-returns `execution_status`, `execution_blocker_code`, and the output-redacted
-`execution_blocker`.
-
-The broker applies output-only privacy redaction before returning MCP content:
-Windows and Unix user-home path segments, `DESKTOP-*` host names (and the
-current host name when available), and credential-shaped values are replaced.
-Raw runtime paths, stderr, prompts, and worker output are never returned
-without this sanitization. Redaction does not store or transmit secrets and
-does not weaken the workdir allowlist or identity gate.
+If no eligible native surface is visible, or the approved Desktop task cannot
+pass its own receipt, freshness, scope, and identity gates, preserve the exact
+Luna/max request and return `HOST_REGISTRATION_REQUIRED` or `BLOCKED`. Include
+the failed surface, host-observed error, requested registry/role change, user
+approval state, and the new handshake required after reload. Do not start a
+hidden local transport, silently change the model, or broaden permissions.
 
 ## Gate evaluation
 
@@ -318,8 +223,8 @@ does not weaken the workdir allowlist or identity gate.
 2. The host returns a `HOST_RECEIPT` bound to the task packet.
 3. Fresh context is `VERIFIED` and controller history is `EXCLUDED`.
 4. Identity proof is `HOST_OBSERVED_MODEL_EFFORT` or
-   `ROLE_MAPPING_AND_LAUNCH_RECORD`, and it matches the request. For an
-   app-server record, no host reroute may be present.
+   `ROLE_MAPPING_AND_LAUNCH_RECORD`, and it matches the request. No host
+   reroute or conflicting effective identity may be present.
 5. Scope is accepted and no host mismatch is reported.
 
 `OPERATOR_UI_ATTESTED` is a separate explicit gate for a user-owned Desktop

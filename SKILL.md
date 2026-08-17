@@ -41,7 +41,7 @@ Choose the cheapest route that satisfies the task:
 
 Normal execution has only the `luna-max` and `sol-xhigh` lanes. Do not select a lane by name, price, or prestige; use task fit and acceptance evidence.
 
-For every normal `LUNA_MAX` dispatch, use this Native-first -> Desktop -> MCP
+For every normal `LUNA_MAX` dispatch, use this Native-first -> Desktop
 dispatch ladder:
 
 1. Use a current-thread native subagent surface whose declared schema, exact
@@ -53,11 +53,8 @@ dispatch ladder:
    and records the user's approval. If authorization is `UNSPECIFIED`, ask for
    confirmation; if it is `DENIED`, skip Desktop. Never create a user-owned
    task implicitly.
-3. If Desktop is not eligible or its handshake fails, use the `HOST_MANAGED`
-   `sol_luna_broker` MCP and record both earlier route decisions. Do not change
-   the requested model.
-4. If MCP preflight also fails, preserve `LUNA_MAX` and return `BLOCKED` under
-   the existing fail-closed rules. Do not switch models.
+3. If Desktop is not eligible or its handshake fails, preserve `LUNA_MAX` and
+   return `BLOCKED` under the existing fail-closed rules. Do not switch models.
 
 The Desktop task is now the conditional priority-2 route. Its exact fields are
 defined in [references/desktop-task-lane.md](references/desktop-task-lane.md);
@@ -99,18 +96,15 @@ Use this recovery order for a Luna task that has not reached `HOST_VERIFIED`:
 
 1. Run a native, handshake-only probe on the current thread.
 2. If native preflight is unavailable or lacks host evidence, evaluate the
-   Desktop task handshake as priority 2 only after explicit user-owned-task
-   approval; otherwise record the authorization state and continue to MCP.
-3. If Desktop is unavailable, not authorized, or fails, run the MCP broker
-   handshake as priority 3 and record both earlier decisions. If any route
-   reports `WINDOWS_SANDBOX_ACL_FAILED`, `PROCESS_CREATION_DENIED`, or a
-   model/role registration mismatch, return
-   `HOST_REMEDIATION_REQUIRED` with an exact permission/host-registration
-   request. Ask the user or host owner to approve the smallest official
-   remediation; do not issue broad ACL/full-control commands from the skill.
+   Desktop task handshake only after explicit user-owned-task approval; record
+   the authorization state and do not create a task implicitly.
+3. If Desktop is unavailable, not authorized, or fails, return
+   `HOST_REMEDIATION_REQUIRED` with an exact host-registration request. Ask the
+   user or host owner to approve the smallest official registry/role change;
+   do not issue broad ACL/full-control commands from the skill.
 4. After the approved host change, refresh/rebind the worker registry and run
-   a new minimal read-only PowerShell probe. Only a successful probe permits a
-   fresh identity handshake and then the implementation packet.
+   a new minimal read-only probe. Only a successful probe permits a fresh
+   identity handshake and then the implementation packet.
 
 Each recovery step must have a new task id, an external state-change record,
 and a bounded stop condition. The caller-facing packet must include the
@@ -167,10 +161,10 @@ prompt: the compact plan packet plus the result-packet rules
 
 `LUNA_MAX` and `SOL_XHIGH` are logical lanes. The surface adapter resolves a
 logical route to a host schema; never assume that a lane name is a registered
-agent type. `NATIVE_GENERIC`, `CUSTOM_ROLE`, and `HOST_MANAGED` are separate
-adapters with separate evidence rules. `USER_VISIBLE_TASK` is a fourth,
-explicitly user-owned adapter with its own receipt and host-observation rules;
-it is not interchangeable with a native worker or the MCP broker.
+agent type. `NATIVE_GENERIC` and `CUSTOM_ROLE` are native adapters with
+separate evidence rules. `USER_VISIBLE_TASK` is an explicitly user-owned
+adapter with its own receipt and host-observation rules; it is not
+interchangeable with a native worker.
 
 The canonical native v1 contract is `multi_agent_v1__spawn_agent`. A future
 native surface may take priority 1 only when it is visible in the current
@@ -222,8 +216,7 @@ and self-report evidence to `HOST_VERIFIED`.
 
 For `CUSTOM_ROLE`, the host must prove the registered role and launch record
 (`agent_type`, fresh fork, model, effort, and receipt). A TOML/config file alone
-is not proof. `HOST_MANAGED` is valid only when the host returns the same
-task-bound evidence. A user-owned Desktop task is a separate explicit adapter;
+is not proof. A user-owned Desktop task is a separate explicit adapter;
 it may be selected only when the plan and user approval allow it. It must never
 be created merely to obtain a model or to bypass a `No user-owned task` gate.
 
@@ -238,11 +231,11 @@ for the exact `codex_app__list_projects`, `codex_app__create_thread`,
 keeps controller history out of the initial prompt. This is priority 2: use it
 after native preflight fails and only when the plan records
 `User-owned task: ALLOWED` plus `User approval: GRANTED`. `UNSPECIFIED` requires
-confirmation; it is not an implicit denial. If the gate is not granted, continue
-to the priority-3 MCP route.
+confirmation; it is not an implicit denial. If the gate is not granted, return
+`BLOCKED` with the required host-registration action; do not create a task.
 
-This route does not call the local Sol broker, `setupStart`, PowerShell, or ACL
-APIs. It is therefore the safe alternative when the user forbids external
+This route does not call `setupStart`, PowerShell, or ACL APIs. It is therefore
+the safe alternative when the user forbids external
 permission changes. It still runs under whatever execution policy the Desktop
 host reports: a `PROCESS_CREATION_DENIED` result is an execution block, not a
 reason to request broad ACL changes. The app task's `threadId`/`hostId` is a
@@ -251,86 +244,14 @@ is absent, classify `HOST_MODEL_UNOBSERVABLE`; do not call it a mismatch. Only
 an explicit `OPERATOR_ATTESTED` plan may use the user's live GUI confirmation as
 `OPERATOR_UI_ATTESTED`, and that evidence remains separate from host identity.
 
-### MCP Luna broker
+### After native and Desktop preflight
 
-At priority 3, use the installed `sol_luna_broker` MCP server as the explicit
-`HOST_MANAGED` transport adapter only when the native surface is not visible in
-the current Desktop thread, its schema/model cannot express the requested Luna/max
-contract, or native preflight cannot obtain the required host evidence, and the
-conditional Desktop route is not eligible or has failed.
-This changes the transport surface, not the requested model. It is not a silent
-model fallback. MCP is not a native subagent, and MCP evidence must never be
-labeled native. The broker must:
-
-- launch a fresh ephemeral app-server thread with `gpt-5.6-luna` and `max`;
-- capture the task-bound `thread/start` model/effort record and reject any
-  `model/rerouted` event;
-- validate the task id, sandbox, prompt size, and allowed roots before starting
-  an implementation process; a read-only `handshake_only=true` probe may omit
-  `workdir` and uses a private platform temp directory;
-- require `handshake_only=true` with `read-only` sandbox before implementation;
-- return a task-bound `HOST_LAUNCH_RECORD`, runtime version/hash, and
-  fresh/history facts at `thread/start` without dispatching `turn/start`; an
-  identity-only result has `execution_status=NOT_STARTED` and is not
-  `HOST_VERIFIED`; and
-- label model self-report as advisory. The app-server launch record can satisfy
-  `identity=VERIFIED` only when it matches and no host reroute is observed.
-  Overall `HOST_VERIFIED` additionally requires `execution_status=COMPLETED`.
-
-Keep broker identity and execution facts independent. In particular,
-`WINDOWS_SANDBOX_ACL_FAILED` and `PROCESS_CREATION_DENIED` are execution
-blockers classified as `runtime` or `permission`; they do not erase an already
-verified host identity. They do keep the overall result below `HOST_VERIFIED`,
-and high-risk work remains `BLOCKED`. Do not respond by silently changing the
-model or relaxing the sandbox or permissions.
-
-For implementation packets that may exceed the MCP caller deadline, the broker
-supports an explicit asynchronous `HOST_JOB_RECEIPT` plus `sol_luna_poll`.
-Submit only after the synchronous identity handshake passes; poll the same
-task-bound job until its nested worker payload is `COMPLETED` or `FAILED`. A
-caller timeout or `PENDING` result is not permission to resubmit the packet and
-is not evidence that the worker failed.
-
-The broker is PowerShell 7 based rather than Windows-only: use `pwsh` on
-Windows, Linux, or macOS, or set `SOL_LUNA_POWERSHELL_PATH` to an explicit
-PowerShell executable. `SOL_LUNA_RUNTIME_PATH` accepts an absolute executable
-path or a PATH-resolved command name, but its SHA-256 pin remains mandatory.
-`SOL_LUNA_ALLOWED_ROOTS` is required only for implementation/write work. When
-it rejects a workdir, the MCP error includes `broker_error_code`, the variable,
-reason, repair, and example; use that repair instead of guessing ACL commands.
-Allowed-root diagnostics also return the platform `path_separator` and a
-`reload_hint` so the caller can correct configuration without touching ACLs.
-
-Broker output is sanitized before it crosses the MCP boundary: user-home
-paths, host names, and credential-shaped values are redacted. This is an
-output privacy guard, not a substitute for the explicit allowed-root,
-handshake, or identity gates.
-
-`SOL_LUNA_TRANSPORT=cli` is retained for legacy diagnostics. It launches the
-isolated CLI process and returns `BROKER_RUN_RECEIPT`, but remains
-`STARTED_UNVERIFIED` because it has no host identity telemetry.
-
-The caller invokes the fixed tool as:
-
-```text
-sol_luna_exec({
-  task_id: <stable id>,
-  workdir: <approved worktree, optional for read-only handshake>,
-  prompt: <compact Sol packet>,
-  sandbox: "read-only" | "workspace-write",
-  handshake_only: true | false
-})
-```
-
-Use the broker after recording the native candidate and the Desktop decision
-(including an authorization skip when applicable). Keep the high-risk identity gate closed
-until the host supplies independent identity evidence; a worker self-report
-never creates `HOST_VERIFIED`. If broker preflight also fails, return
-`HOST_REMEDIATION_REQUIRED` with the exact next host action; the implementation
-remains `BLOCKED` without changing the model. The broker implementation and
-contract test live under
-`scripts/sol-luna-broker.ps1` and `tests/broker-contract.ps1` in the installed
-skill.
+If the native surface is unavailable and the explicitly approved Desktop task
+cannot pass its own transport, freshness, scope, and identity gates, preserve
+`LUNA_MAX` and return `HOST_REMEDIATION_REQUIRED` or `BLOCKED` with a concrete
+host-registration request. Do not create an unapproved user-owned task, invoke
+an alternate local transport, change the model, or widen permissions. Resume
+only after the host registry changes and a new task-bound handshake succeeds.
 
 The `SOL_XHIGH` lane must request `gpt-5.6-sol / xhigh`; if the host cannot
 honor it, classify the failure as `runtime` or `model_identity` and do not

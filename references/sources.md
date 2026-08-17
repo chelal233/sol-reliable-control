@@ -40,7 +40,7 @@ identity gates.
 
 This is the earlier Codex Sol control design reference. Sol adopts the useful
 controller/reviewer separation and bounded evidence mindset, but reimplements
-the host adapter, model identity gate, async MCP receipt, privacy redaction, and
+the host adapter, model identity gate, task receipt, privacy redaction, and
 Desktop-task route for the current host. No old branch, archive, ZIP, or local
 worktree is a runtime dependency.
 
@@ -83,7 +83,7 @@ Sol binds its normal lanes as follows:
   of models even when a separate host task surface accepts Luna. This issue is
   evidence, not a normative Sol contract.
 
-These references explain why a local app-server/MCP execution can report
+These references explain why a host execution can report
 `WINDOWS_SANDBOX_ACL_FAILED` or `PROCESS_CREATION_DENIED`. They do **not** grant
 Sol permission to change ACLs, invoke administrative setup, or touch unrelated
 user directories.
@@ -94,13 +94,11 @@ user directories.
 | --- | --- | --- |
 | [`SKILL.md`](../SKILL.md) | controller identity, route order, state machine, gates | every dispatch |
 | [`protocol.md`](protocol.md) | compact plan/handshake/result packets and evidence states | packet construction and review |
-| [`runtime-adapters.md`](runtime-adapters.md) | Native, Desktop-task, custom-role, and MCP adapter contracts | capability preflight |
+| [`runtime-adapters.md`](runtime-adapters.md) | Native, Desktop-task, and custom-role adapter contracts | capability preflight |
 | [`desktop-task-lane.md`](desktop-task-lane.md) | Desktop Luna task schema, project/worktree modes, receipt and no-ACL rules | Desktop route |
 | [`enablement.md`](enablement.md) | host registration/config boundary and bounded recovery | missing capability or permission |
 | [`registration.md`](registration.md) | exact registration, refresh, ordered attempts, and approval packet | host unblock |
-| [`../scripts/sol-luna-broker.ps1`](../scripts/sol-luna-broker.ps1) | fixed Luna/max MCP transport and async polling | MCP route only |
 | [`../tests/protocol-contract.ps1`](../tests/protocol-contract.ps1) | routing and documentation contract | every documentation change |
-| [`../tests/broker-contract.ps1`](../tests/broker-contract.ps1) | MCP initialize/tools/ping/lane contract | broker changes |
 | [`../tests/privacy-contract.ps1`](../tests/privacy-contract.ps1) | path, credential-shape, and output-redaction contract | every source/runtime sync |
 
 The canonical source is the repository root. The installed runtime copy is
@@ -113,7 +111,7 @@ The default Luna order is:
 ```text
 1. NATIVE_GENERIC / CUSTOM_ROLE native surface
 2. USER_VISIBLE_TASK Desktop task (only with explicit user approval)
-3. HOST_MANAGED sol_luna_broker MCP
+3. Host registration/rebind after both eligible surfaces fail
 ```
 
 The second step is conditional, not an automatic user-task creation. If the
@@ -152,7 +150,7 @@ authorizes resubmitting the same implementation packet.
 - Workdir and project targets must be explicit; projectless Desktop tasks are
   handshake-only and cannot access a local repository.
 - Broker output redacts user-home paths, host names, and credential-shaped
-  values before crossing the MCP boundary.
+  values before crossing a task boundary.
 - Packets contain compact scope, exclusions, verification, and evidence paths;
   they do not contain private reasoning, full transcripts, credentials, or old
   worktree history.
@@ -167,7 +165,7 @@ When changing a route or host adapter, verify all of the following:
 4. ACL/token remediation is not introduced into a normal route.
 5. Source and runtime hashes match after synchronization.
 6. `protocol-contract.ps1`, `privacy-contract.ps1`, and
-   `broker-contract.ps1` pass on both copies.
+   the protocol and privacy contracts pass on both copies.
 7. The final packet reports outcome, changed paths, verification, blocker, and
    next action without leaking secrets or private worker reasoning.
 
@@ -179,8 +177,7 @@ every route. The following matrix must be read before selecting a surface:
 | Route | Advantages | Costs / failure modes | Required mitigation |
 | --- | --- | --- | --- |
 | Native subagent | Lowest visibility overhead; no user-owned task; best controller-context isolation | Current-thread tool may be absent; model allowlist may expose only Sol/Terra; custom role metadata may disagree with the host | Enumerate the current thread; verify exact schema, fresh semantics, receipt, and host-observed Luna/max; never borrow sibling evidence |
-| Desktop task | Uses the host's explicit Luna task surface; avoids Sol's nested local MCP broker; visible and easy for a user to inspect | Creates a user-owned task; projectless mode cannot touch a repo; project/local mode may have host sandbox limits; effective model telemetry may be absent | Require explicit approval; call `list_projects` first; prefer a fresh worktree; retain `threadId` + `hostId`; classify missing telemetry as `HOST_MODEL_UNOBSERVABLE`; use `OPERATOR_UI_ATTESTED` only under an explicit operator-attested gate and never call it `HOST_VERIFIED` |
-| MCP broker | Stable Sol-owned schema; cross-platform PowerShell 7 launcher; private temp workdir for read-only handshakes; async receipt/polling | Implementation still needs an explicit allowed root; host sandbox setup can fail before a command runs; caller deadline can hide a pending job; it is not native evidence | Use as priority 3; omit workdir only for read-only handshake; configure explicit roots for implementation; use platform path separators; follow structured repair diagnostics; pin runtime path/hash; never widen ACLs from Sol; poll the same job and do not duplicate packets |
+| Desktop task | Uses the host's explicit Luna task surface; visible and easy for a user to inspect | Creates a user-owned task; projectless mode cannot touch a repo; project/local mode may have host sandbox limits; effective model telemetry may be absent | Require explicit approval; call `list_projects` first; prefer a fresh worktree; retain `threadId` + `hostId`; classify missing telemetry as `HOST_MODEL_UNOBSERVABLE`; use `OPERATOR_UI_ATTESTED` only under an explicit operator-attested gate and never call it `HOST_VERIFIED` |
 
 ### Problem and solution catalog
 
@@ -195,7 +192,7 @@ the same packet.
 
 **Solution:** classify the result as thread-bound surface mismatch, record the
 exact schema, evaluate the approved Desktop task route at priority 2, and use
-MCP at priority 3 when Desktop is not eligible or fails. Keep
+request host registration when Desktop is not eligible or fails. Keep
 `LUNA_MAX` and `Fallback: BLOCKED` unchanged unless the plan explicitly allows
 a compatibility lane.
 
@@ -243,21 +240,17 @@ packet; do not call `setupStart`, `icacls`, `Set-Acl`, `takeown`, or equivalent
 from Sol. If a host owner chooses remediation, request only the smallest
 official host change and require a new minimal read-only probe before retrying.
 
-#### E. MCP timeout or asynchronous ambiguity
+#### E. Host timeout or asynchronous ambiguity
 
-**Symptom:** the synchronous MCP call times out while the nested worker may still
-be running, or polling returns `PENDING`.
+**Symptom:** a host call times out while the worker may still be running, or the
+task status remains pending.
 
 **Risk:** launching a duplicate implementation packet and producing conflicting
 edits or receipts.
 
-**Solution:** make the synchronous `handshake_only=true` call stop at the
-task-bound `thread/start` launch record instead of waiting for `turn/start`;
-return `HOST_LAUNCH_RECORD` with `execution_status=NOT_STARTED` within the
-broker deadline. Then use `execution_mode="async"` for implementation, retain
-the task-bound `job_id`, poll the same job, and treat `PENDING`/caller timeout
-as unknown—not as permission to resubmit. A launch record still needs a later
-turn with no reroute before `HOST_VERIFIED`.
+**Solution:** retain the task-bound receipt, treat a timeout or pending state as
+unknown, and do not resubmit the packet. Request the host's completion record
+or a fresh bounded handshake after an external host state change.
 
 #### F. Model reroute or effort mismatch
 
@@ -285,10 +278,10 @@ commit in the release evidence.
 **Symptom:** a packet contains user-home paths, host names, credentials, full
 transcripts, or private worker reasoning.
 
-**Risk:** publishing sensitive data to GitHub or crossing an MCP/task boundary.
+**Risk:** publishing sensitive data to GitHub or crossing a task boundary.
 
 **Solution:** use compact packets and placeholders, keep raw logs outside the
-repository, apply broker output redaction, run `privacy-contract.ps1`, and
+repository, apply output sanitization, run `privacy-contract.ps1`, and
 manually review diffs before publication.
 
 ## 9. GitHub publication risks and release checklist
@@ -302,8 +295,8 @@ action from local implementation. Before pushing a branch or opening a PR:
    `<CODEX_HOME>` and `<approved-worktree-root>`.
 3. Inspect both tracked and untracked files; `git diff` alone does not show an
    untracked artifact.
-4. Run `git diff --check`, `protocol-contract.ps1`, `privacy-contract.ps1`, and
-   `broker-contract.ps1` from the source checkout.
+4. Run `git diff --check`, `protocol-contract.ps1`, and `privacy-contract.ps1`
+   from the source checkout.
 5. Synchronize the runtime copy only after the source commit is reviewed, then
    verify the per-file SHA-256 set with `tests/runtime-sync-contract.ps1`.
 6. Review the license/attribution obligations of every linked project before
@@ -311,7 +304,7 @@ action from local implementation. Before pushing a branch or opening a PR:
    paraphrases; it does not vendor their implementation.
 7. Describe the host/version assumptions and the known limitation that Desktop
    task effective model telemetry may be unavailable.
-8. Do not commit generated reports, broker output, sandbox logs, or task
+8. Do not commit generated reports, sandbox logs, or task
    transcripts unless they have been deliberately sanitized and are required
    as a public fixture.
 9. Push only the intended branch. Do not force-push or rewrite shared history

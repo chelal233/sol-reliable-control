@@ -32,16 +32,15 @@ Fallback: BLOCKED
 Sol may request enablement and verify it. Sol must not claim enablement from a
 worker self-report, a local role file, or a successful source/runtime sync.
 
-Normal dispatch follows **Native-first -> Desktop-task -> MCP**. First use a
+Normal dispatch follows **Native-first -> Desktop-task**. First use a
 native subagent surface visible in the current controller thread when its
 declared schema, exact Luna/max pair, fresh/history semantics, and host evidence
 pass preflight. `multi_agent_v1__spawn_agent` is canonical; a future equivalent
 must be explicitly declared native and independently verifiable. If native
 preflight fails, evaluate an explicitly approved `USER_VISIBLE_TASK` Desktop
 route as priority 2. `UNSPECIFIED` authorization requires a fresh confirmation;
-it is not `DENIED`. If Desktop is not eligible or fails, use the
-`HOST_MANAGED` `sol_luna_broker` as priority 3. If all eligible routes fail,
-return `BLOCKED` and do not change the model.
+it is not `DENIED`. If Desktop is not eligible or fails, return `BLOCKED` and
+do not change the model or start a hidden transport.
 
 ## Host enablement request
 
@@ -51,7 +50,7 @@ Send this compact request to the host capability owner or host control plane:
 Task ID: <stable id>
 Capability requirement: LUNA_MAX_REQUIRED
 Requested model/effort: gpt-5.6-luna / max
-Allowed surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED
+Allowed surface: NATIVE_GENERIC | CUSTOM_ROLE
 Execution context: FRESH
 Controller history: EXCLUDED
 Required receipt: task-bound HOST_RECEIPT
@@ -69,8 +68,7 @@ canonical wrapper is absent, the host must add the exact Luna/max pair to the
 selected surface's advertised allowlist and document its declared request
 fields. The adapter maps the normalized fresh-context requirement to that
 schema, such as `fork_turns: none` when the surface explicitly declares that
-field. For
-`CUSTOM_ROLE` or `HOST_MANAGED`, the host must expose an authoritative role or
+field. For `CUSTOM_ROLE`, the host must expose an authoritative role and
 launch mapping; a `.codex/agents/*.toml` file alone is not enablement.
 
 The older `collaboration.spawn_agent` schema is not the canonical native v1
@@ -84,7 +82,7 @@ identity:
 
 ```text
 Enablement status: ENABLED | NOT_ENABLED | UNKNOWN
-Surface: NATIVE_GENERIC | CUSTOM_ROLE | HOST_MANAGED
+Surface: NATIVE_GENERIC | CUSTOM_ROLE
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Advertised model/effort: <host fact>
 Schema evidence: <host schema or capability reference>
@@ -124,11 +122,9 @@ unchanged packet, or treat approval alone as enablement.
 If another thread on the same Desktop host exposes `multi_agent_v1__spawn_agent`
 with Luna/max while the current thread exposes only the Sol/Terra
 `collaboration.spawn_agent` schema, classify the current result as
-`THREAD_SURFACE_NOT_VISIBLE`, evaluate the explicit Desktop-task gate, and then
-preflight the current thread's priority-3 MCP after native failure when Desktop
-is not eligible or fails.
-If MCP is also unavailable, the recovery action is surface migration/rebind or
-a fresh controller thread, not model substitution.
+`THREAD_SURFACE_NOT_VISIBLE`, evaluate the explicit Desktop-task gate, and
+request surface migration/rebind or a fresh controller thread when no eligible
+surface remains. Do not substitute another model.
 
 ## Configuration boundary
 
@@ -167,8 +163,8 @@ The route uses the host's `codex_app__create_thread` with
 `model="gpt-5.6-luna"` and `thinking="max"`, then retains the ready
 `threadId`/`hostId` receipt. Require host-observed effective model/effort and
 fresh/history evidence; UI selection and worker self-report are advisory. This
-route does not run the local MCP broker or perform ACL/token remediation. A
-process-creation or sandbox-permission failure remains an execution blocker.
+route does not perform ACL/token remediation. A process-creation or
+sandbox-permission failure remains an execution blocker.
 
 If the host does not expose effective model/effort, classify the result as
 `HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. The caller may use an
@@ -179,42 +175,11 @@ not `HOST_LAUNCH_RECORDED`, and not `HOST_VERIFIED`. For `HIGH` work, retain an
 isolated worktree, no secrets/destructive/ACL/external side effects or
 descendants, and Sol review before commit or merge.
 
-The installed Sol Luna MCP broker is an explicit managed transport for hosts
-where the native surface is not visible, is schema/model-incompatible, or
-native preflight cannot produce the required host evidence, and the conditional
-Desktop route is not eligible or has failed. It is the third route, not a silent model fallback or
-native subagent. By default it fixes
-`gpt-5.6-luna / max`, creates a fresh ephemeral app-server thread, and returns
-a task-bound `HOST_LAUNCH_RECORD`. The CLI route remains available only when
-`SOL_LUNA_TRANSPORT=cli`; it returns `BROKER_RUN_RECEIPT` and remains
-`STARTED_UNVERIFIED` because it has no host identity telemetry.
-
-The app-server surface can supply the missing launch record without creating a
-user-owned task. A synchronous `handshake_only=true` call captures the fresh
-ephemeral `thread/start` response, including its task-bound thread id, `model`,
-and `reasoningEffort`, then stops without dispatching `turn/start`. Record
-`HOST_LAUNCH_RECORDED` when those fields exactly equal Luna/max; the result is
-`execution_status=NOT_STARTED`, not `HOST_VERIFIED`. Use a later verification
-turn to inspect `model/rerouted` or another host conflict before promoting it
-to `HOST_VERIFIED`.
-
-The broker is not Windows-only: register it with PowerShell 7 `pwsh` on
-Windows, Linux, or macOS. A read-only handshake may omit `workdir` and uses a
-private platform temp directory. Implementation calls still require
-`SOL_LUNA_ALLOWED_ROOTS`; use `;` on Windows and `:` on Linux/macOS for
-multiple roots. Missing or invalid roots return a structured repair diagnostic
-with the exact variable and reload instruction.
-
-Never promote MCP transport success or worker self-report to `HOST_VERIFIED`.
-The host-managed route must satisfy its own independent identity proof, and
-overall `HOST_VERIFIED` still requires `execution_status=COMPLETED`.
-
-When the implementation turn may outlive the caller's MCP deadline, use the
-broker's explicit asynchronous mode after this handshake: submit
-`execution_mode="async"`, retain the returned `HOST_JOB_RECEIPT`/`job_id`, and
-poll `sol_luna_poll` until the nested result is `COMPLETED` or `FAILED`. The
-job receipt proves submission and fresh context only; it does not replace the
-nested app-server identity evidence.
+After the native and explicitly approved Desktop routes fail, the only safe
+action is a host-registration request. Preserve `gpt-5.6-luna / max`, include
+the exact missing surface/schema and the smallest requested registry change,
+then refresh the owning host and run a new task-bound handshake. Do not start
+an undocumented local transport, change ACLs, or substitute another model.
 
 ## Acceptance gate
 
