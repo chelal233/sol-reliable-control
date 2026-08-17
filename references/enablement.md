@@ -34,13 +34,15 @@ worker self-report, a local role file, or a successful source/runtime sync.
 
 Normal dispatch follows **Native-first -> Desktop-task**. First use a
 native subagent surface visible in the current controller thread when its
-declared schema, exact Luna/max pair, fresh/history semantics, and host evidence
-pass preflight. `multi_agent_v1__spawn_agent` is canonical; a future equivalent
-must be explicitly declared native and independently verifiable. If native
-preflight fails, evaluate an explicitly approved `USER_VISIBLE_TASK` Desktop
-route as priority 2. `UNSPECIFIED` authorization requires a fresh confirmation;
-it is not `DENIED`. If Desktop is not eligible or fails, return `BLOCKED` and
-do not change the model or start a hidden transport.
+declared schema accepts the exact Luna/max request, returns a task-bound
+handle/receipt, and confirms fresh/history/scope facts. This default is the
+`HOST_ACCEPTED` gate; effective model telemetry is optional. `multi_agent_v1__spawn_agent`
+is canonical; a future equivalent must be explicitly declared native and
+independently verifiable. If native preflight fails, evaluate an explicitly
+approved `USER_VISIBLE_TASK` Desktop route as priority 2. `UNSPECIFIED`
+authorization requires a fresh confirmation; it is not `DENIED`. If Desktop is
+not eligible or fails, return `BLOCKED` and do not change the model or start a
+hidden transport.
 
 ## Host enablement request
 
@@ -53,8 +55,9 @@ Requested model/effort: gpt-5.6-luna / max
 Allowed surface: NATIVE_GENERIC | CUSTOM_ROLE
 Execution context: FRESH
 Controller history: EXCLUDED
-Required receipt: task-bound HOST_RECEIPT
-Required identity evidence: HOST_OBSERVED_MODEL_EFFORT or authoritative role launch record
+Identity gate: HOST_ACCEPTED | HOST_VERIFIED
+Required receipt: task-bound HOST_RECEIPT or AGENT_HANDLE (native default)
+Required identity evidence: HOST_REQUEST_ACCEPTED (native default) | HOST_OBSERVED_MODEL_EFFORT | authoritative role launch record (strict)
 Fallback: BLOCKED
 User-owned task: DENIED | ALLOWED | UNSPECIFIED
 User approval: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
@@ -86,16 +89,23 @@ Surface: NATIVE_GENERIC | CUSTOM_ROLE
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Advertised model/effort: <host fact>
 Schema evidence: <host schema or capability reference>
+Host acceptance: ACCEPTED | REJECTED | UNKNOWN
 Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
-Dispatch receipt support: HOST_RECEIPT | UNKNOWN
-Identity evidence support: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | UNKNOWN
+Dispatch receipt support: HOST_RECEIPT | AGENT_HANDLE | UNKNOWN
+Identity evidence support: HOST_REQUEST_ACCEPTED | HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | UNKNOWN
 Blocker: <None or concrete host reason>
 ```
 
-`ENABLED` is accepted only when the exact model/effort pair, fresh/history
-semantics, receipt support, and host-owned identity evidence are all present.
-If the host advertises only other models, return:
+Under the default native `HOST_ACCEPTED` policy, `ENABLED` is accepted when
+the exact model/effort pair is accepted by the selected surface, fresh/history
+semantics and scope are confirmed, a task-bound `HOST_RECEIPT` or
+`AGENT_HANDLE` is returned, and no rejection/mismatch/reroute is present.
+Record `Identity: ASSUMED` and `Identity proof kind: HOST_REQUEST_ACCEPTED`.
+`HOST_VERIFIED` remains an optional strict mode and additionally requires
+host-observed effective model/effort or an authoritative role launch record.
+If the exact host call is rejected, no task-bound handle/receipt is returned,
+or a mismatch/reroute is reported, return:
 
 ```text
 Enablement status: NOT_ENABLED
@@ -161,10 +171,11 @@ forbids user-owned tasks.
 
 The route uses the host's `codex_app__create_thread` with
 `model="gpt-5.6-luna"` and `thinking="max"`, then retains the ready
-`threadId`/`hostId` receipt. Require host-observed effective model/effort and
-fresh/history evidence; UI selection and worker self-report are advisory. This
-route does not perform ACL/token remediation. A process-creation or
-sandbox-permission failure remains an execution blocker.
+`threadId`/`hostId` receipt. Desktop remains subject to its own
+host-observed/attested identity rules; the native `HOST_ACCEPTED` assumption
+does not silently transfer to this user-owned route. UI selection and worker
+self-report are advisory. This route does not perform ACL/token remediation. A
+process-creation or sandbox-permission failure remains an execution blocker.
 
 If the host does not expose effective model/effort, classify the result as
 `HOST_MODEL_UNOBSERVABLE`, not `HOST_MODEL_MISMATCH`. The caller may use an
@@ -183,12 +194,15 @@ an undocumented local transport, change ACLs, or substitute another model.
 
 ## Acceptance gate
 
-Luna enablement is complete only when:
+Luna enablement is complete for the default native gate only when:
 
-1. The selected host surface advertises `gpt-5.6-luna / max`.
+1. The selected native host surface accepts the exact `gpt-5.6-luna / max`
+   request.
 2. The surface declares the fresh-context and controller-history semantics.
-3. A task-bound `HOST_RECEIPT` is supported.
-4. The host can observe and return `gpt-5.6-luna` plus `max` independently of
-   worker self-report, either as `HOST_OBSERVED_MODEL_EFFORT` or an
-   authoritative app-server launch record.
+3. A task-bound `HOST_RECEIPT` or `AGENT_HANDLE` is returned and scope is
+   accepted.
+4. No explicit rejection, mismatch, or reroute is present.
 5. The bounded identity handshake passes before implementation starts.
+
+If the caller selects strict `HOST_VERIFIED`, add independent host-observed
+effective model/effort or an authoritative role launch record to the gate.

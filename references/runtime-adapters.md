@@ -16,7 +16,7 @@ Requested model/effort: <route binding>
 Luna enablement: REQUIRED
 Execution context: FRESH
 Controller history: EXCLUDED
-Identity gate: HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
+Identity gate: HOST_ACCEPTED | HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
 Operator attestation: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Task packet: <bounded plan packet>
 ```
@@ -27,23 +27,30 @@ The adapter returns these facts before execution is authorized:
 Surface: NATIVE_GENERIC | CUSTOM_ROLE | USER_VISIBLE_TASK | UNKNOWN
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
+Host acceptance: ACCEPTED | REJECTED | UNKNOWN
 Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Dispatch receipt kind: HOST_RECEIPT | AGENT_HANDLE | UNKNOWN
-Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | OPERATOR_UI_ATTESTATION | SELF_REPORT_ONLY | UNKNOWN
-Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
+Identity proof kind: HOST_REQUEST_ACCEPTED | HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | OPERATOR_UI_ATTESTATION | SELF_REPORT_ONLY | UNKNOWN
+Identity: ASSUMED | VERIFIED | ATTESTED | UNVERIFIED | FAIL
 Operator attestation: GRANTED | NOT_GRANTED | UNKNOWN
 Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
 ```
 
-`AVAILABLE` means the host says the request can be submitted. It does not
-prove that the worker actually ran with the requested identity. Runtime
-identity is gated separately by the receipt and identity-proof fields.
+`AVAILABLE` means the host says the request can be submitted. For the default
+native `HOST_ACCEPTED` gate, the stronger runtime condition is an accepted
+exact spawn with a task-bound handle/receipt, fresh/history/scope facts, and no
+rejection or reroute. Record `Identity: ASSUMED` and
+`Identity proof kind: HOST_REQUEST_ACCEPTED`; effective telemetry remains
+optional. `HOST_VERIFIED` still requires independent host identity proof.
 
-When `Luna enablement: REQUIRED` and the requested Luna pair is absent, the
-adapter returns `NOT_ENABLED` / `HOST_ENABLEMENT_REQUIRED` before dispatch.
-That state is not a compatibility fallback and must not create a worker.
+When `Luna enablement: REQUIRED` and the selected surface explicitly rejects
+the requested Luna pair, returns no task-bound handle/receipt, or reports a
+mismatch/reroute, the adapter returns `NOT_ENABLED` /
+`HOST_ENABLEMENT_REQUIRED` before implementation. An incomplete static model
+list is not by itself a rejection when the exact call is accepted. That state
+is not a compatibility fallback and must not substitute another model.
 
 ## Logical route bindings
 
@@ -64,10 +71,11 @@ file, or a worker's self-report cannot authorize this dispatch. For normal
 `LUNA_MAX`, apply this two-level ladder:
 
 1. **Priority 1: current-thread native.** Use
-   `multi_agent_v1__spawn_agent` when its model/effort matrix contains
-   `gpt-5.6-luna / max` and its preflight supplies the required host evidence.
-   A future equivalent is eligible only when the host explicitly declares a
-   native contract whose schema and evidence are verifiable.
+   `multi_agent_v1__spawn_agent` when an exact `gpt-5.6-luna / max` call is
+   accepted and its preflight supplies fresh/history/scope facts and a
+   task-bound handle/receipt. Effective model telemetry is optional under
+   `HOST_ACCEPTED`; a future equivalent is eligible only when the host
+   explicitly declares a native contract.
 2. **Priority 2: USER_VISIBLE_TASK (conditional).** After native preflight
    fails, and only when the plan explicitly allows a user-owned task with user
    approval, use the Desktop task adapter. `UNSPECIFIED` requires confirmation;
@@ -81,13 +89,15 @@ candidates fail their own preflight, preserve the requested model and return
 `BLOCKED`.
 
 If a thread exposes only `collaboration.spawn_agent` with
-`gpt-5.6-sol`/`gpt-5.6-terra`, that candidate is unavailable, but the result
-must not be promoted to a global host verdict until all visible candidates have
-been checked. If `multi_agent_v1__spawn_agent` is visible on a sibling thread
+`gpt-5.6-sol`/`gpt-5.6-terra`, an explicit rejection of the exact Luna call is
+unavailable, but the result must not be promoted to a global host verdict
+until all visible candidates have been checked. If the exact call is accepted,
+the candidate is eligible for `HOST_ACCEPTED` even if its static enum is stale
+or incomplete. If `multi_agent_v1__spawn_agent` is visible on a sibling thread
 but not this controller, use `THREAD_SURFACE_NOT_VISIBLE`, evaluate the
 priority-2 Desktop gate. Request a host surface migration/rebind or a fresh
-controller thread when no eligible surface remains. Never
-transplant a sibling's `agent_id`, receipt, or self-report.
+controller thread when no eligible surface remains. Never transplant a
+sibling's `agent_id`, receipt, or self-report.
 
 ## Adapter: NATIVE_GENERIC
 
@@ -121,23 +131,26 @@ collaboration.spawn_agent({
 })
 ```
 
-Use this form only when the current schema declares these fields and advertises
-the exact Luna/max pair. The two schemas are not interchangeable. The older
-`collaboration.spawn_agent` schema cannot impersonate `multi_agent_v1__spawn_agent`,
-borrow its capability evidence, or be called with native-v1 fields; it must
-qualify independently under its own host declaration and evidence contract.
+Use this form only when the current schema declares these fields and the exact
+call accepts the Luna/max pair. A static advertised list is useful preflight
+evidence but does not override an actual host acceptance or rejection. The two
+schemas are not interchangeable. The older `collaboration.spawn_agent` schema
+cannot impersonate `multi_agent_v1__spawn_agent`, borrow its capability
+evidence, or be called with native-v1 fields; it must qualify independently
+under its own host declaration and evidence contract.
 
-Preflight must confirm that the host's advertised model/effort matrix contains
-the required pair. A host rejection such as `Unknown model` is an explicit
-`UNAVAILABLE` result, not a reason to retry the same packet or substitute a
-different model.
+Preflight must issue or observe the exact requested spawn. A host rejection
+such as `Unknown model` is an explicit `UNAVAILABLE` result, not a reason to
+retry the same packet or substitute a different model. An accepted exact call
+is `AVAILABLE` for `HOST_ACCEPTED` even when effective identity telemetry is
+unobservable.
 
-The raw `agent_id` returned by a generic spawn is an `AGENT_HANDLE`, not a
-task-bound host receipt and not identity proof. It becomes a usable
-`HOST_RECEIPT` only when the host contract explicitly identifies it as a
-task-bound dispatch receipt and exposes the requested/observed model and
-effort. For `HOST_VERIFIED`, identity proof must be
-`HOST_OBSERVED_MODEL_EFFORT`; a worker self-report is advisory only.
+The raw `agent_id` returned by a generic spawn is an `AGENT_HANDLE`, not
+effective identity proof. When it binds the accepted task, it is sufficient
+task-bound evidence for the default `HOST_ACCEPTED` gate; it becomes a usable
+`HOST_RECEIPT` only when the host contract explicitly labels it that way. For
+`HOST_VERIFIED`, identity proof must be `HOST_OBSERVED_MODEL_EFFORT` or an
+authoritative role launch record; a worker self-report is advisory only.
 
 A successful native probe on one controller thread is evidence for that
 thread's callable surface only. It is not a receipt or identity proof for a
@@ -155,11 +168,14 @@ requested model/effort: gpt-5.6-luna / max
 prompt: <identity handshake, then the same bounded task packet>
 ```
 
-The host launch record must bind `agent_type`, `fork_turns`, model, reasoning
-effort, and task receipt. The child handshake may prove permission and the
-absence of task/write/subagent activity, but it must not be asked to prove
-unobservable model identity. The required identity proof kind is
-`ROLE_MAPPING_AND_LAUNCH_RECORD`.
+The host launch record must accept and bind `agent_type`, `fork_turns`, model,
+reasoning effort, and a task handle/receipt. Under `HOST_ACCEPTED`, an exact
+accepted role launch with fresh/history/scope facts and no rejection/reroute
+records `Identity: ASSUMED` and `Identity proof kind:
+HOST_REQUEST_ACCEPTED`. Under `HOST_VERIFIED`, the authoritative role launch
+record remains the required identity proof. The child handshake may prove
+permission and the absence of task/write/subagent activity, but it must not be
+asked to prove unobservable model identity.
 
 The presence of `.codex/agents/*.toml`, a role name, or a child self-report is
 not enough: TOML/config alone is not proof. A role that the current host does
@@ -217,6 +233,16 @@ hidden local transport, silently change the model, or broaden permissions.
 
 ## Gate evaluation
 
+`HOST_ACCEPTED` requires all of the following:
+
+1. The selected native surface accepted the exact requested model/effort pair.
+2. A task-bound `AGENT_HANDLE` or `HOST_RECEIPT` was returned.
+3. Fresh context is `VERIFIED` and controller history is `EXCLUDED`.
+4. Scope is accepted and no explicit rejection, mismatch, or reroute is
+   present.
+5. Record `Identity: ASSUMED` and `Identity proof kind:
+   HOST_REQUEST_ACCEPTED`; missing effective telemetry is advisory.
+
 `HOST_VERIFIED` requires all of the following:
 
 1. Capability is `AVAILABLE` for the exact requested model/effort pair.
@@ -243,5 +269,7 @@ for `HOST_DISPATCH`, with a valid host receipt and no explicit mismatch. It is
 not sufficient for high-risk work.
 
 Any missing receipt, rejected model, observed mismatch, unknown context
-semantics, or self-report-only identity yields `BLOCKED` for a
-`HOST_VERIFIED` plan. Keep the original route and owner in the blocker.
+semantics, or self-report-only identity yields `BLOCKED` for the applicable
+gate. Missing effective telemetry alone yields `HOST_MODEL_UNOBSERVABLE` and
+blocks only a strict `HOST_VERIFIED` plan, not an otherwise valid native
+`HOST_ACCEPTED` dispatch. Keep the original route and owner in the blocker.

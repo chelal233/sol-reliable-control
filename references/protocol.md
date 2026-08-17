@@ -22,7 +22,7 @@ Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
 Registration action: NONE | REQUEST_HOST_ENABLEMENT | REGISTER_CUSTOM_ROLE | REFRESH_PREFLIGHT
 Capability preflight: REQUIRED
 Task risk: LOW | HIGH
-Identity gate: HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
+Identity gate: HOST_ACCEPTED | HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
 Operator attestation: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Task scope: <exact files, components, or behaviors owned by this task>
 Do not touch: <paths, behaviors, or systems excluded>
@@ -46,10 +46,12 @@ For a normal `LUNA_MAX` packet, `NATIVE_FIRST_THEN_DESKTOP` is an
 ordered contract:
 
 1. Preflight and use the current-thread native subagent surface when its own
-   declared schema, model/effort matrix, fresh-context semantics, and host
-   evidence match the packet. `multi_agent_v1__spawn_agent` is canonical; a
-   future equivalent must be explicitly declared native and independently
-   verifiable.
+   declared schema, exact model/effort request, fresh-context semantics, and
+   acceptance contract match the packet. Under the default native
+   `HOST_ACCEPTED` gate, the exact spawn call must be accepted and return a
+   task-bound handle or receipt; effective model telemetry is optional.
+   `multi_agent_v1__spawn_agent` is canonical; a future equivalent must be
+   explicitly declared native and independently verifiable.
 2. If native preflight fails, select `USER_VISIBLE_TASK` only when the plan
    explicitly allows a user-owned task with `User approval: GRANTED`, and run
    its handshake. `UNSPECIFIED` requires an explicit confirmation; `DENIED`
@@ -78,9 +80,11 @@ multi_agent_v1__spawn_agent({
 ```
 
 `collaboration.spawn_agent` is a distinct schema. If it declares
-`task_name`, `fork_turns`, `model`, `reasoning_effort`, and `message` but its
-model list omits Luna, classify that candidate as unavailable and continue
-surface discovery; do not conclude that Luna is unavailable on the host if
+`task_name`, `fork_turns`, `model`, `reasoning_effort`, and `message`, use its
+own exact-call result as the authority for the current thread: an accepted
+`gpt-5.6-luna / max` request can satisfy `HOST_ACCEPTED` even when the static
+model list is incomplete. An explicit `Unknown model` rejection remains
+unavailable. Do not conclude that Luna is globally unavailable if
 `multi_agent_v1__spawn_agent` is visible under another thread binding. If no
 eligible native surface is visible in the current thread, record
     `THREAD_SURFACE_NOT_VISIBLE` and evaluate the priority-2 Desktop gate.
@@ -137,6 +141,7 @@ Surface: NATIVE_GENERIC | CUSTOM_ROLE | USER_VISIBLE_TASK | UNKNOWN
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
+Host acceptance: ACCEPTED | REJECTED | UNKNOWN
 Luna enablement: VERIFIED | NOT_ENABLED | UNKNOWN
 Enablement evidence: <host allowlist/schema or launch capability reference>
 Host requested model: <host fact or UNKNOWN>
@@ -150,17 +155,34 @@ Controller-history proof: EXCLUDED | UNKNOWN | FAIL
 Transport: PASS | FAIL
 Dispatch receipt: <host receipt id/path or UNKNOWN>
 Dispatch receipt kind: HOST_RECEIPT | AGENT_HANDLE | UNKNOWN
-Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | OPERATOR_UI_ATTESTATION | SELF_REPORT_ONLY | UNKNOWN
-Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
+Identity proof kind: HOST_REQUEST_ACCEPTED | HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD | OPERATOR_UI_ATTESTATION | SELF_REPORT_ONLY | UNKNOWN
+Identity: ASSUMED | VERIFIED | ATTESTED | UNVERIFIED | FAIL
 Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
 Self-report warning: NONE | MISMATCH | UNKNOWN
 Scope accepted: YES | NO
 Blocker: <None or concrete reason>
 ```
 
-`Host requested model`, `Host observed model`, `Requested effort`, `Observed effort`, and `Dispatch receipt` are host facts. Worker self-report fields are advisory. Transport success is not identity proof. An `AGENT_HANDLE` is not a `HOST_RECEIPT` unless the host contract says it is task-bound. Extra runtime or UI fields are advisory and cannot add a `HOST_VERIFIED` gate.
+`Host requested model`, `Host observed model`, `Requested effort`, `Observed effort`, and `Dispatch receipt` are host facts. Worker self-report fields are advisory. Transport success is not identity proof. An `AGENT_HANDLE` is not a `HOST_RECEIPT` unless the host contract says it is task-bound, but a task-bound handle is sufficient for the default native `HOST_ACCEPTED` gate. Extra runtime or UI fields are advisory and cannot add a `HOST_VERIFIED` gate.
 
-For `Identity gate: HOST_DISPATCH`, a valid `HOST_RECEIPT` with no explicit host mismatch may continue as `HOST_DISPATCHED_UNATTESTED`. For `Identity gate: OPERATOR_ATTESTED`, a user-owned Desktop task may continue as `OPERATOR_UI_ATTESTED` only when the plan explicitly requests that gate, `User approval: GRANTED`, `Operator attestation: GRANTED`, and the operator confirms the live GUI for the exact task/thread shows `gpt-5.6-luna / max`. The operator evidence is not host telemetry and must be recorded as `Identity: ATTESTED`; it never upgrades to `HOST_LAUNCH_RECORDED` or `HOST_VERIFIED`. For `HOST_VERIFIED`, host-observed model/effort or an authoritative custom-role launch record must match the request; unavailable proof is `BLOCKED`. An explicit host mismatch or missing receipt is always `BLOCKED`; do not silently change the requested gate.
+For `Identity gate: HOST_ACCEPTED`, an exact native request accepted by the
+selected surface, a task-bound `AGENT_HANDLE` or `HOST_RECEIPT`, fresh context,
+history exclusion, scope acceptance, and no explicit rejection/mismatch/reroute
+continue as `Routing verdict: HOST_ACCEPTED`, `Identity: ASSUMED`, and
+`Identity proof kind: HOST_REQUEST_ACCEPTED`. Missing effective telemetry is
+`HOST_MODEL_UNOBSERVABLE`, not a blocker for this default native gate. For
+`Identity gate: HOST_DISPATCH`, a valid `HOST_RECEIPT` with no explicit host
+mismatch may continue as `HOST_DISPATCHED_UNATTESTED`. For
+`Identity gate: OPERATOR_ATTESTED`, a user-owned Desktop task may continue as
+`OPERATOR_UI_ATTESTED` only when the plan explicitly requests that gate, `User
+approval: GRANTED`, `Operator attestation: GRANTED`, and the operator confirms
+the live GUI for the exact task/thread shows `gpt-5.6-luna / max`. The operator
+evidence is not host telemetry and must be recorded as `Identity: ATTESTED`;
+it never upgrades to `HOST_LAUNCH_RECORDED` or `HOST_VERIFIED`. For
+`HOST_VERIFIED`, host-observed model/effort or an authoritative custom-role
+launch record must match the request; unavailable proof is `BLOCKED`. An
+explicit host rejection, mismatch, reroute, missing task handle/receipt, or
+scope failure is always `BLOCKED`; do not silently change the requested gate.
 
 `HOST_MODEL_UNOBSERVABLE` means that the host did not expose effective model/effort telemetry. It is not `HOST_MODEL_MISMATCH` and must not be reported as proof that the worker is not Luna. A UI picker, a request parameter, or a worker self-report remains advisory unless the caller explicitly selects the operator-attested gate.
 
@@ -173,13 +195,14 @@ contract for callers that cannot start `LUNA_MAX`.
 
 ## Mandatory Luna enablement gate
 
-Before a normal dispatch, a plan with `Luna enablement: REQUIRED` must receive
-`Luna enablement: VERIFIED` for `gpt-5.6-luna / max`. If no eligible candidate
-surface in the current thread advertises the Luna pair, set
-`Luna enablement: NOT_ENABLED`, return
+Before a normal dispatch, a plan with `Luna enablement: REQUIRED` must either
+receive `Luna enablement: VERIFIED` or pass the default native
+`HOST_ACCEPTED` gate for `gpt-5.6-luna / max`. If the selected surface
+explicitly rejects the pair, returns no task-bound handle/receipt, or reports a
+mismatch/reroute, set `Luna enablement: NOT_ENABLED`, return
 `HOST_ENABLEMENT_REQUIRED` with failure class `runtime` / `model_identity`,
-and do not create a worker. The host must provide new capability evidence
-before preflight is repeated.
+and do not create a worker. A static model list that is incomplete is not by
+itself a rejection when the exact call is accepted.
 
 `SOL_XHIGH` remains a normal replan selected by task fit or the escalation
 gate; it is not a mechanism for hiding a missing mandatory Luna capability.
@@ -330,8 +353,8 @@ Status: PASS | PASS_WITH_WARNING | BLOCKED | HOST_REMEDIATION_REQUIRED
 Summary: <what happened>
 Changed or produced: <exact paths, artifacts, or None>
 Verification: <checks, exit status, concise result>
-Routing verdict: HOST_VERIFIED | HOST_LAUNCH_RECORDED | OPERATOR_UI_ATTESTED | HOST_DISPATCHED_UNATTESTED | HOST_MODEL_UNOBSERVABLE | HOST_MODEL_MISMATCH | DISPATCH_UNCONFIRMED
-Identity: VERIFIED | ATTESTED | UNVERIFIED | FAIL
+Routing verdict: HOST_ACCEPTED | HOST_VERIFIED | HOST_LAUNCH_RECORDED | OPERATOR_UI_ATTESTED | HOST_DISPATCHED_UNATTESTED | HOST_MODEL_UNOBSERVABLE | HOST_MODEL_MISMATCH | DISPATCH_UNCONFIRMED
+Identity: ASSUMED | VERIFIED | ATTESTED | UNVERIFIED | FAIL
 Operator attestation: GRANTED | NOT_GRANTED | UNKNOWN
 Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
 Self-report warning: NONE | MISMATCH | UNKNOWN
@@ -352,7 +375,12 @@ task-bound `threadId`/`hostId`, a fresh task, controller history excluded, no
 explicit host model mismatch/reroute, and `Identity: ATTESTED`. It must include
 the exact task/thread confirmation and the model/effort observed by the user.
 It is not `HOST_LAUNCH_RECORDED` or `HOST_VERIFIED`; the residual identity risk
-must remain in `Blocker` or `Next action`. For a host result, `HOST_VERIFIED`
+must remain in `Blocker` or `Next action`. For a native result,
+`HOST_ACCEPTED` requires an exact accepted request, task-bound handle/receipt,
+fresh context, history exclusion, scope acceptance, and no explicit rejection
+or reroute; record `Identity: ASSUMED` and
+`Identity proof kind: HOST_REQUEST_ACCEPTED`. It authorizes dispatch but does
+not replace the result packet or Sol review. For a host result, `HOST_VERIFIED`
 requires both `Identity: VERIFIED` and
 `execution_status=COMPLETED`. `WINDOWS_SANDBOX_ACL_FAILED` and
 `PROCESS_CREATION_DENIED` are execution blockers with failure class `runtime`
