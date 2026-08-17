@@ -12,7 +12,7 @@ jobs:
       - name: Parse PowerShell
         shell: pwsh
         run: |
-          $files = @('scripts/sol-luna-broker.ps1','tests/broker-contract.ps1','tests/privacy-contract.ps1','tests/protocol-contract.ps1')
+          $files = @('tests/privacy-contract.ps1','tests/protocol-contract.ps1','tests/runtime-sync-contract.ps1')
           foreach ($file in $files) {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$null, [ref]$errors) | Out-Null
@@ -23,7 +23,19 @@ jobs:
         run: |
           & .\tests\protocol-contract.ps1
           & .\tests\privacy-contract.ps1
-          & .\tests\broker-contract.ps1
+      - name: Runtime sync contract
+        shell: pwsh
+        run: |
+          $source = (Get-Location).Path
+          $runtime = Join-Path $env:RUNNER_TEMP 'sol-reliable-control-runtime'
+          New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+          foreach ($relative in @(git ls-files)) {
+            $sourcePath = Join-Path $source $relative
+            $runtimePath = Join-Path $runtime $relative
+            New-Item -ItemType Directory -Path (Split-Path -Parent $runtimePath) -Force | Out-Null
+            Copy-Item -LiteralPath $sourcePath -Destination $runtimePath -Force
+          }
+          & .\tests\runtime-sync-contract.ps1 -RuntimeRoot $runtime -SourceRoot $source
       - name: Diff check
         shell: pwsh
         run: git diff --check

@@ -37,10 +37,13 @@ $enablement = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/enablem
 $registration = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/registration.md')
 $desktopTask = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/desktop-task-lane.md')
 $sources = Get-Content -Raw -LiteralPath (Join-Path $Root 'references/sources.md')
+$license = Get-Content -Raw -LiteralPath (Join-Path $Root 'LICENSE')
 $readme = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.md')
 $readmeEn = Get-Content -Raw -LiteralPath (Join-Path $Root 'README.en.md')
 
 Assert-Contains $skill 'LUNA_MAX' 'logical Luna route must be explicit'
+Assert-Contains $license 'MIT License' 'repository must declare the selected open-source license'
+Assert-Contains $license 'WITHOUT WARRANTY' 'license text must be complete'
 Assert-Contains $skill 'gpt-5.6-luna / max' 'Luna route must bind its requested model and effort'
 Assert-Contains $skill 'SOL_XHIGH' 'logical Sol-XHigh route must be explicit'
 Assert-Contains $skill 'gpt-5.6-sol / xhigh' 'Sol-XHigh route must bind its requested model and effort'
@@ -194,6 +197,7 @@ Assert-Contains $registration 'HOST_MODEL_UNOBSERVABLE' 'registration guide must
 Assert-Contains $registration 'do not request' 'registration must prohibit ACL remediation on this route'
 
 Assert-Contains $readme 'README.en.md' 'README must expose the English companion'
+Assert-Contains $readme 'MIT License' 'README must identify the repository license'
 Assert-Contains $readme 'sol-advisor' 'README must record the Sol advisor reference project'
 Assert-Contains $readme 'codex-sol-control' 'README must record the Codex Sol control reference project'
 Assert-Contains $readme 'USER_VISIBLE_TASK' 'README must document the explicit Desktop task alternative'
@@ -207,6 +211,7 @@ Assert-Contains $readme 'references/sources.md' 'README must expose the complete
 Assert-Contains $readme '主要事项与关键要点' 'README must summarize the main controls'
 
 Assert-Contains $readmeEn 'Native-first -> Desktop-task' 'English README must state the Native/Desktop route priority'
+Assert-Contains $readmeEn 'MIT License' 'English README must identify the repository license'
 Assert-Contains $readmeEn 'multi_agent_v1__spawn_agent' 'English README must name the canonical native surface'
 Assert-Contains $readmeEn 'future equivalent' 'English README must require host-declared and verified future native surfaces'
 Assert-Contains $readmeEn 'Never create a hidden or local alternate transport' 'English README must forbid hidden alternate transport'

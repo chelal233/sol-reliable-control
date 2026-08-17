@@ -71,9 +71,9 @@ the current thread's worker surface, and run a fresh handshake before sending
 implementation instructions. A local TOML role file or UI picker is not a
 task-bound identity receipt.
 
-Before public distribution, the repository owner must choose and add a
-`LICENSE`. This project does not infer a license from the reference projects or
-present an unlicensed checkout as a reusable release.
+This project uses the permissive MIT License; see [`LICENSE`](LICENSE) for the
+full text. The license is not inferred from the reference projects; preserve
+the license notice when using, modifying, or redistributing the project.
 
 ## Reference projects and official documentation
 
@@ -103,6 +103,9 @@ Key controls are:
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/protocol-contract.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/privacy-contract.ps1
+$runtimeRoot = Join-Path $env:CODEX_HOME 'skills/sol-reliable-control'
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests/runtime-sync-contract.ps1 `
+  -RuntimeRoot $runtimeRoot -SourceRoot (Get-Location)
 ```
 
 See [SKILL.md](SKILL.md) and the files under `references/` for the complete

@@ -36,6 +36,7 @@
 - `references/desktop-task-lane.md`：显式 Desktop Luna task 的调用字段、fresh/history、receipt/identity 门禁与 ACL 禁止边界。
 - `tests/protocol-contract.ps1`：不依赖宿主的协议契约回归检查。
 - `tests/privacy-contract.ps1`：源码路径、凭据形态和公开证据脱敏契约检查。
+- `tests/runtime-sync-contract.ps1`：源仓库与安装运行时副本的逐文件哈希/文件集检查。
 - `README.en.md`：English installation, routing, verification, and reference guide。
 - `references/sources.md`：完整参考项目、官方资料、关键原则、利弊/陷阱/解决方案及 GitHub 发布门禁清单。
 - `agents/openai.yaml`：Codex skill 列表的界面元数据。
@@ -77,5 +78,15 @@ Luna/max 的模型目录和宿主 worker 注册属于 Codex 宿主配置，不�
 model catalog 或 host registry 修改都必须由宿主提供官方入口，并在重载后
 重新枚举当前线程的 surface；本地配置文件本身不是身份证据。
 
-公开发布前仍需由仓库所有者选择并加入 `LICENSE`；本项目不会根据参考项目
-自动推断许可证，也不会把未选择许可证的仓库标成可复用发行版。
+本项目采用宽松、兼容性良好的 MIT License，完整文本见 [`LICENSE`](LICENSE)。
+许可证不从参考项目自动推断；使用、修改或再发布时请保留许可证声明。
+
+## 验证
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests/protocol-contract.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests/privacy-contract.ps1
+$runtimeRoot = Join-Path $env:CODEX_HOME 'skills/sol-reliable-control'
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests/runtime-sync-contract.ps1 `
+  -RuntimeRoot $runtimeRoot -SourceRoot (Get-Location)
+```

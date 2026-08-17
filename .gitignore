@@ -1,4 +1,4 @@
-# Local Codex/runtime configuration and broker output
+# Local Codex/runtime configuration and task output
 *.local.toml
 *.secrets*
 .env
