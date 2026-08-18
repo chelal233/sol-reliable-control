@@ -7,10 +7,20 @@ Language: [简体中文](README.md) · [English](README.en.md)
 
 ## Normal lanes
 
-- `LUNA_MAX`: bounded, independently verifiable work; requests
+- `LUNA_MAX`: clear, bounded, independently verifiable delegated work; requests
   `gpt-5.6-luna / max`.
-- `SOL_XHIGH`: cross-cutting planning, arbitration, or final review; requests
-  `gpt-5.6-sol / xhigh`.
+- `TERRA_XHIGH` (`TERRA/XHIGH`): large-context, primarily read-only retrieval, organization,
+  comparison, or compression; requests `gpt-5.6-terra / xhigh`.
+- `SOL_XHIGH`: difficult, ambiguous, cross-cutting, high-risk, or
+  reasoning-heavy work; requests `gpt-5.6-sol / xhigh`.
+
+`DIRECT` is reserved for trivial controller-only work. Other tasks use `AUTO`,
+which selects and records a route without treating the choice as fallback.
+
+If a Luna/Terra worker cannot complete or its result is rejected by Sol review,
+allow at most one focused correction. Then assign one fresh Sol/xhigh worker;
+the replacement never reuses the lower worker's handle or private reasoning,
+and its result still requires Sol controller approval.
 
 `BLOCKED` terminates the current implementation dispatch, not the recovery
 workflow. When a safe host repair remains possible, return
@@ -69,9 +79,9 @@ identity; they do not authorize a model substitution or a permission expansion.
 
 ## Installation and host registration
 
-Install this directory under `$CODEX_HOME/skills/sol-reliable-control`. Luna/max
-model availability and worker registration belong to the Codex host. The skill
-does not register a local transport or alter filesystem permissions. After a
+Install this directory under `$CODEX_HOME/skills/sol-reliable-control`. Model
+availability and worker registration belong to the Codex host. The skill does
+not register a local transport or alter filesystem permissions. After a
 host-side role or model-registry change, reload the owning process, re-enumerate
 the current thread's worker surface, and run a fresh handshake before sending
 implementation instructions. An accepted exact native spawn may use
@@ -97,14 +107,15 @@ The public reference projects are
 Key controls are:
 
 1. Native -> (explicitly approved) Desktop task; no implicit user-task creation.
-2. Exact lane binding: `gpt-5.6-luna / max` and `gpt-5.6-sol / xhigh`; no silent model substitution.
+2. Exact lane binding: `gpt-5.6-luna / max`, `gpt-5.6-terra / xhigh`, and `gpt-5.6-sol / xhigh`; no silent model substitution.
 3. Native default `HOST_ACCEPTED`: exact request accepted, task-bound handle/receipt, fresh/history/scope pass, and no rejection/reroute; record `Identity: ASSUMED`.
 4. Independent transport, launch-identity, execution, freshness, and history gates; `HOST_MODEL_UNOBSERVABLE` is not `HOST_MODEL_MISMATCH` and blocks only strict `HOST_VERIFIED`.
 5. A Desktop GUI picker is not host identity evidence by default; an explicitly approved `OPERATOR_ATTESTED` plan may record `OPERATOR_UI_ATTESTED` with `Identity: ATTESTED`, never `HOST_VERIFIED`.
 6. Project selection before Desktop tasks; projectless is handshake-only.
 7. No Sol-owned ACL/token repair or broad permission changes after sandbox failures.
 8. Bind timeout recovery to the same task receipt; no duplicate implementation packet.
-9. Source/runtime hash equality and privacy/protocol tests before publication.
+9. The first lower-lane failure or Sol review rejection gets at most one focused correction; only a second failure starts one fresh Sol/xhigh takeover, followed by final Sol controller review.
+10. Source/runtime hash equality and privacy/protocol tests before publication.
 
 ## Verification
 

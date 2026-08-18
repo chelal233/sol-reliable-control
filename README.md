@@ -7,20 +7,21 @@
 ## 功能说明
 
 - 一个清晰的 Sol 主控负责计划和最终结论；执行 lane 不接管主控，也不能批准整体任务。
-- 正常执行只有两条 lane：
-  - `luna-max`：默认处理边界清晰、可独立验证，以及范围较窄的困难任务；请求 `gpt-5.6-luna / max`。
-  - `sol-xhigh`：处理跨域规划、深度推理、仲裁或最终审核类困难任务；请求 `xhigh` reasoning。
-- `sol-xhigh` 的 `xhigh` 不可用时不静默降级，按 `runtime`/`model_identity` 失败处理。
-- 同一问题在 `luna-max` 下超过 2 次持续审核失败，或业务不清晰反复引发回归时，停止重试并提交 `sol-xhigh` 处理。
-- 显式拒绝、错配、重路由或缺少 task-bound handle 的握手保持 `BLOCKED`；精确的原生 Luna/max spawn 被宿主接受并返回可绑定 handle 时，默认按 `HOST_ACCEPTED` 进入执行，不把“无遥测”误判为失败。
+- 正常 worker lane 有三类：
+  - `luna-max`：目标清晰、边界明确、可独立验证；请求 `gpt-5.6-luna / max`。
+  - `terra-xhigh`（`TERRA/XHIGH`）：大型上下文且主要是只读读取、整理、比较或压缩；请求 `gpt-5.6-terra / xhigh`。
+  - `sol-xhigh`：困难、歧义、跨域、高风险或需要深度推理；请求 `gpt-5.6-sol / xhigh`。
+- `Direct` 只用于不值得派发的控制器元任务；其他未分类任务使用 `AUTO`，由 Sol 记录选择结果。
+- Luna/Terra 无法完成任务，或结果未通过 Sol 主控审核时，最多允许一次局部修正；仍失败则换一个新的 Sol/xhigh worker 执行，最终仍由 Sol 主控审批。
+- 显式拒绝、错配、重路由或缺少 task-bound handle 的握手保持 `BLOCKED`；选中 lane 的精确 native spawn 被宿主接受并返回可绑定 handle 时，默认按 `HOST_ACCEPTED` 进入执行，不把“无遥测”误判为失败。
 - `BLOCKED` 只终止当前实现派发；若仍有安全的宿主修复路径，必须向调用者返回 `HOST_REMEDIATION_REQUIRED`，明确权限申请、外部变更、最小 read-only 探针和下一步，而不是只说“等待”。
 - 恢复顺序固定为：native 握手 →（用户明确允许时）Desktop task 握手 → 用户/宿主批准最小注册或角色修复 → 刷新/重绑；新握手成功前不重试实现包。
 - `LUNA_MAX` 正常调度采用“原生优先、Desktop task 次选”（native-first -> Desktop-task）：第一优先使用当前线程可见且契约匹配的 `multi_agent_v1__spawn_agent`，或未来等价、由宿主声明且可验证的 native surface。
 - native 失败后，只有在计划允许 user-owned task 且用户明确批准时，才使用第二优先 Desktop task；Desktop 未获批准或握手失败后保持原模型并返回 `BLOCKED`，不启动隐藏 transport。
 - `USER_VISIBLE_TASK` 参考 `sol-advisor` 的做法，但它不是启用 Luna 的手段；它仍需独立的 host-observed identity evidence。
 - 该桌面任务路线不调用 `setupStart`、不执行 PowerShell、不修改任何 ACL；若宿主仍报告 `PROCESS_CREATION_DENIED` 或 sandbox 权限错误，只记录执行阻塞并停止，不申请扩大权限。
-- `collaboration.spawn_agent` 是独立的旧/兼容 schema，不能冒充 canonical `multi_agent_v1__spawn_agent` 或混用字段；但只要它实际接受精确的 `gpt-5.6-luna / max` 请求并返回可绑定 handle，就可按自身契约满足默认 `HOST_ACCEPTED`，即使静态 Sol/Terra 枚举过时，也不能把它当成全局能力结论。
-- capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到 Luna 而当前线程看不到时，记录 `THREAD_SURFACE_NOT_VISIBLE`，先评估第二优先 Desktop task；两者都不可用时才要求 surface migration/rebind 或 fresh controller thread。
+- `collaboration.spawn_agent` 是独立的旧/兼容 schema，不能冒充 canonical `multi_agent_v1__spawn_agent` 或混用字段；它必须独立接受所选 lane 的精确模型/effort 请求并返回可绑定 handle。
+- capability snapshot 绑定当前 host 与 controller thread；兄弟线程能看到某个 lane 而当前线程看不到时，记录 `THREAD_SURFACE_NOT_VISIBLE`，不得借用兄弟线程的 receipt 或 agent id。
 - `FALLBACK` 是显式恢复分支：允许任意安全兼容 lane，但必须标记 `UNVERIFIED`，且只用于低风险、窄范围、可独立验证的任务。
 - 只传结构化 packet、验证摘要和 evidence 路径，不导入 worker 全量推理，避免污染主控上下文。
 - 不包含仓库操作、部署流程、项目记忆或其他 skill 的生命周期；本包可单独安装，不要求额外 skill 才能理解自身协议。
@@ -30,7 +31,7 @@
 - `SKILL.md`：主控角色、路由、状态机、握手和审核规则。
 - `references/protocol.md`：计划、握手、结果和 fallback packet schema。
 - `references/runtime-adapters.md`：Native generic、custom role 和 Desktop task 运行面及 capability preflight / receipt / identity 证据契约。
-- `references/enablement.md`：LUNA_MAX 必须由宿主启用的请求、响应、验收门禁，以及 `config.toml` 与 host surface 的边界。
+- `references/enablement.md`：LUNA_MAX 选中时由宿主启用的请求、响应、验收门禁，以及 `config.toml` 与 host surface 的边界。
 - `references/registration.md`：调用者被卡在 Luna/max 前置检查时的注册、刷新、精确调用和恢复步骤。
 - `references/registration.md` 同时区分 native worker、CLI custom-role 和显式 user-visible app task；后者不是 native sub-agent，也不能绕过 `No user-owned task` 约束。
 - `references/desktop-task-lane.md`：显式 Desktop Luna task 的调用字段、fresh/history、receipt/identity 门禁与 ACL 禁止边界。
@@ -52,27 +53,26 @@ Luna 模型资料、Windows sandbox 说明、上游 setup 源码和运行问题�
 
 ## 主要事项与关键要点
 
-1. 路由顺序固定为 Native →（明确批准时）Desktop task；未批准时不创建 user-owned task。
-2. `LUNA_MAX` 始终绑定 `gpt-5.6-luna / max`，`SOL_XHIGH` 绑定 `gpt-5.6-sol / xhigh`，不静默换模型。
-3. 原生默认门禁是 `HOST_ACCEPTED`：精确请求被接受、返回 task-bound `AGENT_HANDLE`/`HOST_RECEIPT`、fresh/history/scope 通过且无拒绝/重路由时，记录 `Identity: ASSUMED`；`HOST_VERIFIED` 仍是可选的宿主遥测严格门禁。
+1. 路由先按任务类型选择：困难推理 → Sol/xhigh，大上下文只读 → Terra/xhigh，清晰可验证 → Luna/max；其他任务进入 `AUTO`。
+2. `LUNA_MAX` 绑定 `gpt-5.6-luna / max`，`TERRA_XHIGH` 绑定 `gpt-5.6-terra / xhigh`，`SOL_XHIGH` 绑定 `gpt-5.6-sol / xhigh`，不静默换模型。
+3. 原生默认门禁是 `HOST_ACCEPTED`：选中 lane 的精确请求被接受、返回 task-bound `AGENT_HANDLE`/`HOST_RECEIPT`、fresh/history/scope 通过且无拒绝/重路由时，记录 `Identity: ASSUMED`；`HOST_VERIFIED` 仍是可选的宿主遥测严格门禁。
 4. `TRANSPORT_VERIFIED`、`HOST_ACCEPTED`、`HOST_LAUNCH_RECORDED`、`HOST_VERIFIED` 分层；`HOST_MODEL_UNOBSERVABLE` 不等于 `HOST_MODEL_MISMATCH`。
 5. Desktop GUI 默认不能证明 `HOST_VERIFIED`；用户明确批准 `OPERATOR_ATTESTED` 后，可记录 `OPERATOR_UI_ATTESTED`，并保留 `Identity: ATTESTED` 与残余风险。
 6. Desktop task 必须选择正确项目/工作树；projectless 只用于握手，local 目录必须显式授权。
 7. Windows sandbox ACL/进程创建失败是宿主执行故障；Sol 不调用 `setupStart`、`icacls`、`Set-Acl` 或扩大权限。
 8. Desktop/宿主超时或权限故障必须绑定原 task 证据，不重复提交实现包；身份与执行失败分离记录。
-9. 发布 GitHub 前必须检查未跟踪文件、秘密、机器路径、旧 worktree、原始日志和许可证归属，并运行协议与隐私契约测试。
+9. Luna/Terra worker 第一次失败或未通过 Sol 审核时，最多允许一次局部修正；第二次仍失败才换新的 Sol/xhigh worker 执行，且该结果仍必须经过 Sol 主控最终审批。
+10. 发布 GitHub 前必须检查未跟踪文件、秘密、机器路径、旧 worktree、原始日志和许可证归属，并运行协议与隐私契约测试。
 
 ## 安装
 
 将仓库目录复制到 `$CODEX_HOME/skills/sol-reliable-control`，或使用 Codex skill 安装器从本仓库安装。
 
-运行时仍由宿主提供 native worker dispatch；默认按 Native → Desktop task 选择 Luna/max 路线。原生精确 spawn 被接受且返回 task-bound `AGENT_HANDLE`/`HOST_RECEIPT` 即可进入 `HOST_ACCEPTED`，并记录 `Identity: ASSUMED`；UI 选择器和 worker 自报不能冒充 `HOST_VERIFIED`。
+运行时仍由宿主提供 native worker dispatch；Desktop task 只是 Luna/max 的明确批准备选，不适用于 Terra/Sol 的普通路线。原生选中 lane 的精确 spawn 被接受且返回 task-bound `AGENT_HANDLE`/`HOST_RECEIPT` 即可进入 `HOST_ACCEPTED`，并记录 `Identity: ASSUMED`；UI 选择器和 worker 自报不能冒充 `HOST_VERIFIED`。
 
 ## 宿主配置与调用
 
-Luna/max 的模型目录和宿主 worker 注册属于 Codex 宿主配置，不由本 skill
-伪造或替代。当前线程必须先显示可调用的 native worker surface，并在新任务
-握手中返回 task-bound handle/receipt、fresh/history/scope 事实且没有显式拒绝或重路由；原生默认不要求有效模型/effort 遥测。若精确请求被拒绝、没有 handle/receipt 或发生错配，才在获得用户批准后使用 Desktop task，仍无法满足门禁时保持 `BLOCKED`。
+模型目录和宿主 worker 注册属于 Codex 宿主配置，不由本 skill 伪造或替代。当前线程必须先显示可调用的 native worker surface，并在新任务握手中返回 task-bound handle/receipt、fresh/history/scope 事实且没有显式拒绝或重路由；原生默认不要求有效模型/effort 遥测。若选中 lane 的精确请求被拒绝、没有 handle/receipt 或发生错配，保持该 lane 的阻塞状态，不静默切换模型；只有 `AUTO` 或下级 worker 失败升级规则允许重新选择。
 
 不要在 `$CODEX_HOME/config.toml` 注册已删除的本地 transport。任何角色注册、
 model catalog 或 host registry 修改都必须由宿主提供官方入口，并在重载后

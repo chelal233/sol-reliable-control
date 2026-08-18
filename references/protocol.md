@@ -9,19 +9,25 @@ Task ID: <stable id>
 Goal: <one sentence>
 Done when: <observable acceptance conditions>
 Controller: SOL
-Route: DIRECT | SOL_ONLY | LUNA_MAX | SOL_XHIGH | FALLBACK
+Owner: SOL_CONTROLLER
+Route: DIRECT | SOL_ONLY | LUNA_MAX | TERRA_XHIGH | SOL_XHIGH | AUTO | FALLBACK
 Execution context: FRESH | CURRENT
-Requested model/effort: <for example gpt-5.6-luna / max or gpt-5.6-sol / xhigh>
+Requested model/effort: <for example gpt-5.6-luna / max, gpt-5.6-terra / xhigh, or gpt-5.6-sol / xhigh>
 Surface: AUTO | NATIVE_GENERIC | CUSTOM_ROLE | USER_VISIBLE_TASK
 Dispatch priority: NATIVE_FIRST_THEN_DESKTOP | EXPLICIT_USER_VISIBLE_TASK
 User-owned task: DENIED | ALLOWED | UNSPECIFIED
 User approval: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Recovery policy: BOUNDED_HOST_REMEDIATION | NONE
-Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | UNKNOWN
+Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | NOT_REQUIRED | UNKNOWN
+Selected capability: NONE | LUNA_MAX | TERRA_XHIGH | SOL_XHIGH | HOST_DEFAULT
 Registration action: NONE | REQUEST_HOST_ENABLEMENT | REGISTER_CUSTOM_ROLE | REFRESH_PREFLIGHT
 Capability preflight: REQUIRED
 Task risk: LOW | HIGH
+Task difficulty: SIMPLE | HARD | UNKNOWN
+Context profile: SMALL | LARGE | UNKNOWN
+Mutation policy: READ_ONLY | WRITE_ALLOWED
+Context sources: <explicit paths, attachment handles, or resource refs>
 Identity gate: HOST_ACCEPTED | HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
 Operator attestation: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Task scope: <exact files, components, or behaviors owned by this task>
@@ -32,15 +38,33 @@ Verification: <commands or checks>
 Fallback: <one safe compatibility lane or BLOCKED>
 Lane rationale: <task-fit reason; do not use model prestige>
 Quality basis: <fresh evidence, prior accepted result, or None>
+Escalation policy: NONE | AFTER_TWO_LOWER_ATTEMPTS_TO_SOL_XHIGH
+Route trace: <surface, priority, decision, reason_code, receipt for each route attempt>
 ```
 
 Do not dispatch a packet with a missing goal, acceptance condition, scope, owner, verification, risk, or identity gate.
 
 `Route` is a logical lane and `Surface` is a host adapter. `AUTO` means that
-Sol must select an adapter only after capability preflight. The route binding
-is fixed: `LUNA_MAX` requests `gpt-5.6-luna / max`, and `SOL_XHIGH` requests
-`gpt-5.6-sol / xhigh`. A surface may reject that request; it may not silently
-rewrite it.
+Sol selects Direct, Luna, Terra, or Sol from the task facts and records the
+choice before capability preflight. The normal route bindings are fixed:
+`LUNA_MAX` requests `gpt-5.6-luna / max`, and the user-facing `TERRA/XHIGH`
+label maps to the logical route `TERRA_XHIGH`, which requests
+`gpt-5.6-terra / xhigh`, and `SOL_XHIGH` requests `gpt-5.6-sol / xhigh`. A
+surface may reject a request; it may not silently rewrite it.
+
+Use this classification matrix before dispatch:
+
+| Task facts | Route | Required model/effort | Mutation policy |
+| --- | --- | --- | --- |
+| Difficult, ambiguous, cross-domain, high-risk, or reasoning-heavy | `SOL_XHIGH` | `gpt-5.6-sol / xhigh` | From plan |
+| Large context, primarily reading, organizing, comparing, or compressing | `TERRA_XHIGH` | `gpt-5.6-terra / xhigh` | `READ_ONLY` |
+| Clear goal, bounded scope, independently verifiable | `LUNA_MAX` | `gpt-5.6-luna / max` | From plan |
+| Trivial controller-only or explicitly unassigned work | `DIRECT` or `AUTO` | Controller-selected | From plan |
+
+When a task is both context-heavy and reasoning-heavy, use Terra for a
+read-only extraction packet only when that split is useful, then assign a fresh
+Sol/xhigh worker for the judgment and final artifact. `FALLBACK` is not the
+normal representation for the last row.
 
 For a normal `LUNA_MAX` packet, `NATIVE_FIRST_THEN_DESKTOP` is an
 ordered contract:
@@ -75,7 +99,7 @@ multi_agent_v1__spawn_agent({
   fork_context: false,
   model: "gpt-5.6-luna",
   reasoning_effort: "max",
-  message: <identity-only handshake or bounded packet>
+  message: <atomic bounded packet or identity-only preflight>
 })
 ```
 
@@ -98,11 +122,12 @@ host declaration and verifiable contract; otherwise record the mismatch and
 advance to the priority-2 Desktop gate; if it is not eligible or fails, return
 `BLOCKED`.
 
-`Luna enablement: REQUIRED` is the default deployment requirement. It means
-the host must expose the normal Luna capability even when a particular packet
-is independently routed to `SOL_XHIGH`; it does not force every task to use
-Luna. Use [references/enablement.md](enablement.md) for the host request and
-evidence contract.
+`Luna enablement: REQUIRED` is only valid when the selected route is
+`LUNA_MAX`. For `TERRA_XHIGH`, `SOL_XHIGH`, `AUTO`, `DIRECT`, and `SOL_ONLY`, set
+`Luna enablement: NOT_REQUIRED` and use `Selected capability` to identify the
+actual host requirement. A missing unselected model must not block the selected
+route. Use [references/enablement.md](enablement.md) only for a Luna route that
+needs host registration or remediation.
 
 When enablement is missing, set `Registration action` to the next concrete
 host operation. Do not leave the caller with an unclassified `BLOCKED`: use
@@ -119,16 +144,43 @@ remains `BLOCKED` until the user grants or denies the Desktop task explicitly.
 This prevents a policy sentence such as “do not use a user-owned task as an
 enablement bypass” from being mis-normalized into an implicit approval.
 
+## Dispatch phases
+
+Native generic dispatch is atomic by default: the exact route/model/effort
+request, task scope, mutation policy, and bounded task packet are accepted as
+one task. A task-bound handle authorizes that same task under `HOST_ACCEPTED`;
+there is no undocumented second continuation call.
+
+An identity-only probe is preflight evidence, not an implementation worker. If
+the probe succeeds, send a new task id with the actual bounded packet and bind
+the implementation result to that new receipt.
+
+`USER_VISIBLE_TASK` is the exception: its Desktop adapter may use a genuine
+two-phase sequence of handshake, explicit approval, and follow-up message, but
+the follow-up must retain the same `threadId`/`hostId` and task scope. A failed
+lower-lane result is never continued by mutating the old worker; escalation
+starts a new `SOL_XHIGH` task.
+
 ## Controller states
 
 ```text
-PLANNED -> HANDSHAKE_PENDING -> EXECUTING -> RESULT_PENDING
+PLANNED -> CAPABILITY_PENDING -> HANDSHAKE_PENDING -> EXECUTING -> RESULT_PENDING
           -> REVIEW_PENDING -> ACCEPTED
-          -> FIX_PENDING -> EXECUTING
+          -> FIX_PENDING -> EXECUTING -> RESULT_PENDING
+          -> ESCALATION_PENDING -> HANDSHAKE_PENDING
 Any state -> BLOCKED
 ```
 
 `BLOCKED` means the lane could not be trusted or started. A failed handshake must never be represented as a worker result. `FIX_PENDING` allows one focused correction with the original scope and owner.
+
+`FIX_PENDING` is the single second attempt for the same `LUNA_MAX` or
+`TERRA_XHIGH` route. It uses a new task id, preserves the original scope, and
+must contain a focused correction rather than an unchanged packet.
+`ESCALATION_PENDING` is used only after two lower-lane attempts cannot complete
+or are rejected by Sol review. It starts one fresh `SOL_XHIGH` task with a new
+task id and does not reuse the lower workers' handles, context, or private
+reasoning. The replacement result returns to `REVIEW_PENDING`; Sol remains the
+final approver.
 
 ## Handshake packet
 
@@ -142,13 +194,18 @@ Dispatch tool/schema: <exact callable tool and declared fields, or UNKNOWN>
 Capability verdict: AVAILABLE | UNKNOWN | UNAVAILABLE
 Capability evidence: <host metadata or receipt reference>
 Host acceptance: ACCEPTED | REJECTED | UNKNOWN
-Luna enablement: VERIFIED | NOT_ENABLED | UNKNOWN
+Luna enablement: VERIFIED | NOT_ENABLED | NOT_REQUIRED | UNKNOWN
+Selected capability: NONE | LUNA_MAX | TERRA_XHIGH | SOL_XHIGH | HOST_DEFAULT
 Enablement evidence: <host allowlist/schema or launch capability reference>
 Host requested model: <host fact or UNKNOWN>
 Host observed model: <host fact or UNKNOWN>
 Worker self-report model: <advisory claim or UNKNOWN>
 Requested effort: <host fact or UNKNOWN>
 Observed effort: <host fact or UNKNOWN>
+Task difficulty: SIMPLE | HARD | UNKNOWN
+Context profile: SMALL | LARGE | UNKNOWN
+Mutation policy: READ_ONLY | WRITE_ALLOWED
+Context sources: <explicit paths, attachment handles, or resource refs>
 Execution context: FRESH | CURRENT | UNKNOWN
 Fresh-context proof: VERIFIED | UNVERIFIED | FAIL
 Controller-history proof: EXCLUDED | UNKNOWN | FAIL
@@ -160,6 +217,7 @@ Identity: ASSUMED | VERIFIED | ATTESTED | UNVERIFIED | FAIL
 Operator evidence: <exact task/thread confirmation and UI-observed model/effort, or NONE>
 Self-report warning: NONE | MISMATCH | UNKNOWN
 Scope accepted: YES | NO
+Escalation: NONE | SOL_XHIGH_TAKEOVER | NOT_APPLICABLE
 Blocker: <None or concrete reason>
 ```
 
@@ -193,25 +251,29 @@ The registration guide and unblock procedure are in
 [references/registration.md](registration.md). It is part of the protocol
 contract for callers that cannot start `LUNA_MAX`.
 
-## Mandatory Luna enablement gate
+## Selected-route capability gate
 
-Before a normal dispatch, a plan with `Luna enablement: REQUIRED` must either
-receive `Luna enablement: VERIFIED` or pass the default native
-`HOST_ACCEPTED` gate for `gpt-5.6-luna / max`. If the selected surface
-explicitly rejects the pair, returns no task-bound handle/receipt, or reports a
-mismatch/reroute, set `Luna enablement: NOT_ENABLED`, return
-`HOST_ENABLEMENT_REQUIRED` with failure class `runtime` / `model_identity`,
-and do not create a worker. A static model list that is incomplete is not by
-itself a rejection when the exact call is accepted.
+Before a normal worker dispatch, `Selected capability` must match the route:
 
-`SOL_XHIGH` remains a normal replan selected by task fit or the escalation
-gate; it is not a mechanism for hiding a missing mandatory Luna capability.
-When Luna enablement is required, `Fallback: BLOCKED` remains in force and a
-new user-owned task must not be created solely as an enablement workaround.
-That prohibition does not silently deny a legitimate Desktop route: after a
-native failure, the priority-2 Desktop gate may pause for confirmation when
-`User-owned task: UNSPECIFIED`; `ALLOWED` plus `GRANTED` is eligible. If the
-gate is not granted, preserve the requested lane and return `BLOCKED`.
+| Route | Selected capability | Required model/effort | Luna enablement |
+| --- | --- | --- | --- |
+| `LUNA_MAX` | `LUNA_MAX` | `gpt-5.6-luna / max` | `REQUIRED` or `VERIFIED` |
+| `TERRA_XHIGH` | `TERRA_XHIGH` | `gpt-5.6-terra / xhigh` | `NOT_REQUIRED` |
+| `SOL_XHIGH` | `SOL_XHIGH` | `gpt-5.6-sol / xhigh` | `NOT_REQUIRED` |
+| `AUTO` | Selected after classification | Host-selected | `NOT_REQUIRED` unless AUTO selects Luna |
+
+If the selected surface explicitly rejects the required pair, returns no
+task-bound handle/receipt, or reports a mismatch/reroute, return a
+route-specific `HOST_ENABLEMENT_REQUIRED` or `BLOCKED` result with failure
+class `runtime` / `model_identity`; do not silently substitute another model.
+A static model list that is incomplete is not by itself a rejection when the
+exact call is accepted.
+
+The selected route owns its capability gate. `SOL_XHIGH` may be selected
+directly for a hard task or as the one-time replacement only after two
+lower-lane attempts fail review; neither case requires Luna enablement. The Desktop
+task gate remains a Luna-specific, explicitly approved alternative and must not
+be created merely as an enablement workaround.
 
 An explicitly approved Desktop task is a separate execution choice, not host
 enablement evidence. It may be used after native preflight fails when the caller
@@ -235,10 +297,12 @@ Use the host's native generic worker surface when available:
 
 ```text
 agent role: generic worker
-route: LUNA_MAX | SOL_XHIGH
+route: LUNA_MAX | TERRA_XHIGH | SOL_XHIGH | AUTO
 requested model/effort: <from plan packet>
 fresh context: true
 controller history: excluded
+mutation policy: READ_ONLY | WRITE_ALLOWED
+context sources: <explicit paths, attachment handles, or resource refs>
 prompt: the compact plan packet plus the result-packet rules
 ```
 
@@ -263,9 +327,10 @@ Do not send the `multi_agent_v1__spawn_agent` fields to
 These are different host schemas. A thread that exposes only the latter must
 not retry with a Luna model that its own enum rejects.
 
-`LUNA_MAX` and `SOL_XHIGH` are logical lane labels, not required custom
-registrations. `SOL_XHIGH` requests `gpt-5.6-sol / xhigh`. If the host rejects
-the requested lane/model/effort, reports it unavailable, or observes a
+`LUNA_MAX`, `TERRA_XHIGH`, and `SOL_XHIGH` are logical lane labels, not required
+custom registrations. They request `gpt-5.6-luna / max`,
+`gpt-5.6-terra / xhigh`, and `gpt-5.6-sol / xhigh` respectively. If the host
+rejects the selected lane/model/effort, reports it unavailable, or observes a
 different model, classify the failure as `runtime` or `model_identity`. Do not
 retry the identical unavailable packet.
 
@@ -335,11 +400,21 @@ hidden local transport, silently change the model, or broaden permissions.
 
 ## Lane selection
 
-- Select `luna-max` by default for bounded work and difficult work whose scope remains narrow and independently verifiable.
-- Select `sol-xhigh` for difficult reasoning, cross-cutting planning, arbitration, or final review; request `xhigh` effort.
-- Do not escalate merely after a failure; identify the failure class and task-fit reason first.
-- `SOL_XHIGH` is a normal replan, not an implicit fallback. Use it only when task fit or the repeated-failure escalation gate independently selects it.
-- If the same issue has been rejected more than twice under `luna-max`, or unclear business semantics repeatedly cause regressions, stop retrying `luna-max` and route the issue to `sol-xhigh` with the failure evidence.
+- Select `sol-xhigh` for difficult reasoning, ambiguity, cross-cutting planning,
+  arbitration, high risk, or final review; request `gpt-5.6-sol / xhigh`.
+- Select `terra-xhigh` for large-context work whose primary operation is
+  read-only retrieval, organization, comparison, or compression; request
+  `gpt-5.6-terra / xhigh` and require `Mutation policy: READ_ONLY`.
+- Select `luna-max` for a clear goal, bounded scope, and independently
+  verifiable result; request `gpt-5.6-luna / max`.
+- `SOL_XHIGH` is a normal route and a post-attempt takeover route. If `LUNA_MAX`
+  or `TERRA_XHIGH` cannot complete, or Sol rejects its result, allow one focused
+  second attempt on the same lower route. After the second attempt is rejected,
+  assign a fresh `SOL_XHIGH` worker with both compact failure summaries. This is
+  a new task and new handle, not a retry of either lower worker.
+- A lower-lane execution or review failure consumes one of the two lower-lane
+  attempts; an unavailable host surface is a capability blocker and does not
+  consume an execution attempt.
 - `FALLBACK` is an explicit recovery route. It may name any safe compatible lane, but it is not a normal route and must be labeled `UNVERIFIED`.
 - Fallback is limited to low-risk, narrow, independently verifiable work. High-risk work returns `BLOCKED` when the requested lane cannot be verified, unless the plan explicitly selected `OPERATOR_ATTESTED` and satisfies that gate's isolated-worktree, no-side-effect, and Sol-review controls.
 
@@ -360,6 +435,8 @@ Operator evidence: <exact task/thread confirmation and UI-observed model/effort,
 Self-report warning: NONE | MISMATCH | UNKNOWN
 Evidence: <artifact or result path bound to the acceptance conditions>
 Review verdict: PASS | FIX | BLOCKED | NOT_RUN
+Escalation: NONE | SOL_XHIGH_TAKEOVER | NOT_APPLICABLE
+Controller final approval: PASS | FIX | BLOCKED | NOT_RUN
 Failure class: runtime | model_identity | permission | dependency | scope | verification | conflict | none
 Blocker: <None or concrete reason>
 Recovery state: NONE | HOST_REMEDIATION_REQUIRED | PROBE_PENDING | READY | EXHAUSTED
@@ -401,15 +478,16 @@ dispatch plus `HOST_REMEDIATION_REQUIRED` and a concrete `Next action` when a
 safe host repair or permission request remains. Do not leave the caller with
 only the word `BLOCKED` when a bounded recovery step is available.
 
-If the plan has `Luna enablement: REQUIRED` and the host does not expose the
-required pair, return `HOST_ENABLEMENT_REQUIRED` and keep `Fallback: BLOCKED`.
-This is a host configuration blocker that requires an enablement response; it
-is not permission to switch identity or model.
+If the selected route's capability is unavailable, return a route-specific
+`HOST_ENABLEMENT_REQUIRED` and keep `Fallback: BLOCKED` unless the plan
+explicitly selected `AUTO`. This is a host configuration blocker for the
+selected route; it is not permission to switch identity or model.
 
-If a surface does not expose `gpt-5.6-luna`, do not automatically turn the
-request into `SOL_XHIGH`: replan to `SOL_XHIGH` only when its normal task-fit or
-escalation rule applies. Otherwise return `BLOCKED` with the original
-`LUNA_MAX` request, the rejected surface, and the missing capability evidence.
+If a surface does not expose the selected model, do not silently change the
+request. For `LUNA_MAX` and `TERRA_XHIGH`, a completed-but-rejected result gets
+one second lower-lane attempt; only a second rejection triggers the fresh
+`SOL_XHIGH` takeover. A pre-dispatch capability rejection remains a
+route-specific blocker unless `AUTO` explicitly permits a different selection.
 
 `BLOCKED` applies to the current implementation dispatch, not to the recovery
 workflow. When the caller can safely change host state, return a bounded

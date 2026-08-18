@@ -13,10 +13,10 @@ host capability snapshot.
 
 ## Policy
 
-`LUNA_MAX` capability is mandatory for a conforming Sol deployment. A task may
-still select `SOL_XHIGH` for independent task-fit reasons, but the host must
-not be accepted as a complete Sol runtime while the normal Luna lane is
-absent. For a packet whose route is `LUNA_MAX`, absence of the capability is a
+This document is the Luna-specific enablement contract. `LUNA_MAX` capability
+is required only when the selected packet route is `LUNA_MAX`; it is not a
+global prerequisite for `SOL_XHIGH`, `TERRA_XHIGH`, `AUTO`, or controller-only
+work. For a packet whose route is `LUNA_MAX`, absence of the capability is a
 host configuration blocker, not permission to substitute another model.
 
 The required binding is:
@@ -32,7 +32,7 @@ Fallback: BLOCKED
 Sol may request enablement and verify it. Sol must not claim enablement from a
 worker self-report, a local role file, or a successful source/runtime sync.
 
-Normal dispatch follows **Native-first -> Desktop-task**. First use a
+Luna dispatch follows **Native-first -> Desktop-task**. First use a
 native subagent surface visible in the current controller thread when its
 declared schema accepts the exact Luna/max request, returns a task-bound
 handle/receipt, and confirms fresh/history/scope facts. This default is the

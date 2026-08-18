@@ -11,11 +11,16 @@ Every dispatch is evaluated with this normalized input:
 
 ```text
 Task ID: <stable id>
-Route: LUNA_MAX | SOL_XHIGH
+Route: LUNA_MAX | TERRA_XHIGH | SOL_XHIGH | AUTO
 Requested model/effort: <route binding>
-Luna enablement: REQUIRED
+Selected capability: NONE | LUNA_MAX | TERRA_XHIGH | SOL_XHIGH | HOST_DEFAULT
+Luna enablement: REQUIRED | VERIFIED | NOT_ENABLED | NOT_REQUIRED | UNKNOWN
 Execution context: FRESH
 Controller history: EXCLUDED
+Task difficulty: SIMPLE | HARD | UNKNOWN
+Context profile: SMALL | LARGE | UNKNOWN
+Mutation policy: READ_ONLY | WRITE_ALLOWED
+Context sources: <explicit paths, attachment handles, or resource refs>
 Identity gate: HOST_ACCEPTED | HOST_DISPATCH | OPERATOR_ATTESTED | HOST_VERIFIED
 Operator attestation: REQUIRED | GRANTED | NOT_REQUIRED | UNKNOWN
 Task packet: <bounded plan packet>
@@ -45,43 +50,59 @@ rejection or reroute. Record `Identity: ASSUMED` and
 `Identity proof kind: HOST_REQUEST_ACCEPTED`; effective telemetry remains
 optional. `HOST_VERIFIED` still requires independent host identity proof.
 
-When `Luna enablement: REQUIRED` and the selected surface explicitly rejects
-the requested Luna pair, returns no task-bound handle/receipt, or reports a
-mismatch/reroute, the adapter returns `NOT_ENABLED` /
-`HOST_ENABLEMENT_REQUIRED` before implementation. An incomplete static model
-list is not by itself a rejection when the exact call is accepted. That state
-is not a compatibility fallback and must not substitute another model.
+When the selected capability and exact model/effort pair are rejected, return
+`NOT_ENABLED` / `HOST_ENABLEMENT_REQUIRED` before implementation. For
+`LUNA_MAX`, this is also recorded as `Luna enablement: NOT_ENABLED`; for
+`TERRA_XHIGH` and `SOL_XHIGH`, Luna remains `NOT_REQUIRED`. An incomplete static
+model list is not by itself a rejection when the exact call is accepted. That
+state is not a compatibility fallback and must not substitute another model.
 
 ## Logical route bindings
 
 | Route | Required model | Required effort | Normal use |
 | --- | --- | --- | --- |
 | `LUNA_MAX` | `gpt-5.6-luna` | `max` | Bounded, independently verifiable execution |
+| `TERRA_XHIGH` | `gpt-5.6-terra` | `xhigh` | Large-context, read-only retrieval and synthesis |
 | `SOL_XHIGH` | `gpt-5.6-sol` | `xhigh` | Deep reasoning, arbitration, cross-cutting planning, or final review |
 
-These are the only normal Sol lanes. `SOL_XHIGH` is a normal replan when task
-fit or the escalation gate selects it; it is not an implicit compatibility
-fallback.
+These are the normal Sol worker lanes. `SOL_XHIGH` is selected directly for
+difficult work and is also the fresh-worker takeover after two lower-lane
+attempts cannot complete or cannot pass Sol review; it is not an implicit
+compatibility fallback.
+
+### `TERRA_XHIGH` (`TERRA/XHIGH`) read-only contract
+
+`TERRA_XHIGH` is a normal native worker route, not a Luna fallback. It requires
+an exact `gpt-5.6-terra / xhigh` request, `Context profile: LARGE`,
+`Mutation policy: READ_ONLY`, and explicit context sources. The worker may read
+those sources and return a compact evidence packet, but it must not edit files,
+approve the overall task, or create descendants. If the large-context task also
+requires difficult judgment, send the evidence packet to a fresh `SOL_XHIGH`
+worker and keep Sol controller review as the final gate.
 
 ## Surface discovery, priority, and thread binding
 
 Capability is scoped to the controller thread and host that will perform the
 dispatch. A capability list captured in another thread, a UI picker, a role
-file, or a worker's self-report cannot authorize this dispatch. For normal
-`LUNA_MAX`, apply this two-level ladder:
+file, or a worker's self-report cannot authorize this dispatch. For every
+normal worker route, use the current-thread native surface first. Only
+`LUNA_MAX` has the additional Desktop-task alternative:
 
 1. **Priority 1: current-thread native.** Use
-   `multi_agent_v1__spawn_agent` when an exact `gpt-5.6-luna / max` call is
+   `multi_agent_v1__spawn_agent` when an exact selected-route model/effort call is
    accepted and its preflight supplies fresh/history/scope facts and a
    task-bound handle/receipt. Effective model telemetry is optional under
    `HOST_ACCEPTED`; a future equivalent is eligible only when the host
    explicitly declares a native contract.
-2. **Priority 2: USER_VISIBLE_TASK (conditional).** After native preflight
+2. **Priority 2 for `LUNA_MAX`: USER_VISIBLE_TASK (conditional).** After native preflight
    fails, and only when the plan explicitly allows a user-owned task with user
    approval, use the Desktop task adapter. `UNSPECIFIED` requires confirmation;
    never synthesize `DENIED` or create a task implicitly.
-3. If Desktop is not eligible or fails, preserve the requested lane and return
-   `BLOCKED` with a host-registration action. Do not start a hidden transport.
+3. If the selected native route is not eligible, preserve the requested lane
+   and return a route-specific `BLOCKED`/`HOST_ENABLEMENT_REQUIRED` result. Do
+   not start a hidden transport. A failed `LUNA_MAX` or `TERRA_XHIGH` result,
+   after execution rather than preflight, consumes one lower-lane attempt; a
+   second failed attempt may trigger the fresh `SOL_XHIGH` takeover.
 
 A separately registered `CUSTOM_ROLE` remains an explicit specialized route;
 it does not reorder this normal-dispatch ladder. If all eligible ladder
