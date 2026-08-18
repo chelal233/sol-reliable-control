@@ -58,15 +58,18 @@ worktree is a runtime dependency.
 
 - [GPT-5.6 Luna model reference](https://developers.openai.com/api/docs/models/gpt-5.6-luna):
   model identity and supported API surface.
+- [GPT-5.6 Terra model reference](https://developers.openai.com/api/docs/models/gpt-5.6-terra):
+  model identity, context window, and supported API surface.
 - [Latest model guidance](https://developers.openai.com/api/docs/guides/latest-model):
   current model-selection guidance.
 
-Sol binds its normal lanes as follows:
+Sol binds its normal worker lanes as follows:
 
 | Logical lane | Exact request | Rule |
 | --- | --- | --- |
 | `LUNA_MAX` | `gpt-5.6-luna / max` | required for the Luna lane; never silently substituted |
-| `SOL_XHIGH` | `gpt-5.6-sol / xhigh` | normal replan/escalation lane; not an implicit Luna fallback |
+| `TERRA_XHIGH` | `gpt-5.6-terra / xhigh` | large-context, read-only extraction and synthesis |
+| `SOL_XHIGH` | `gpt-5.6-sol / xhigh` | difficult reasoning and one-time takeover after two lower-lane attempts; not a silent fallback |
 
 ### Windows sandbox and runtime evidence
 
@@ -118,25 +121,36 @@ plan says `User-owned task: DENIED`, Sol skips it. If authorization is
 an operator-selected override and still requires the same approval and identity
 gates.
 
-`SOL_XHIGH` is a normal replan selected by task fit or the escalation rule. It
-is not a silent compatibility fallback for an unavailable Luna route.
+`TERRA_XHIGH` uses the current-thread native generic surface with explicit large
+context sources and `Mutation policy: READ_ONLY`; it does not require Luna
+enablement. `SOL_XHIGH` is selected directly for difficult work and is also the
+one-time fresh-worker takeover only after two lower-lane attempts cannot complete
+or cannot pass Sol review. It is not a silent compatibility fallback.
 
 ## 5. Evidence and failure controls
 
 Sol keeps these facts separate:
 
 1. `TRANSPORT_VERIFIED`: the selected surface returned a task-bound result.
-2. `HOST_LAUNCH_RECORDED`: the host reported exact effective Luna/max for the
-   fresh task.
-3. `HOST_VERIFIED`: launch identity, freshness, history exclusion, no reroute,
+2. `HOST_ACCEPTED`: the native host accepted the selected exact model/effort
+   request and returned a task-bound handle/receipt with fresh/history/scope
+   facts and no rejection or reroute; record `Identity: ASSUMED` when telemetry
+   is absent.
+3. `HOST_LAUNCH_RECORDED`: the host reported the selected effective model/effort
+   for the fresh task.
+4. `HOST_VERIFIED`: launch identity, freshness, history exclusion, no reroute,
    scope, and completed execution all pass.
-4. Worker self-report, UI model selection, and a bare `agent_id` are advisory.
-5. `PROCESS_CREATION_DENIED` and `WINDOWS_SANDBOX_ACL_FAILED` are execution
+5. Worker self-report, UI model selection, and a bare `agent_id` are advisory;
+   an accepted native handle is task-binding evidence only under
+   `HOST_ACCEPTED`.
+6. `PROCESS_CREATION_DENIED` and `WINDOWS_SANDBOX_ACL_FAILED` are execution
    blockers; they do not erase an independently verified host identity.
 
-High-risk implementation remains blocked until the required identity and
-execution gates pass. A timeout, pending job, or failed handshake never
-authorizes resubmitting the same implementation packet.
+High-risk implementation remains blocked until the selected identity/acceptance
+gate and execution gates pass. Under the default native policy that gate is
+`HOST_ACCEPTED`; a strict `HOST_VERIFIED` plan still requires host telemetry. A
+timeout, pending job, or failed handshake never authorizes resubmitting the
+same implementation packet.
 
 ## 6. Permission, privacy, and scope boundaries
 
@@ -173,7 +187,7 @@ every route. The following matrix must be read before selecting a surface:
 
 | Route | Advantages | Costs / failure modes | Required mitigation |
 | --- | --- | --- | --- |
-| Native subagent | Lowest visibility overhead; no user-owned task; best controller-context isolation | Current-thread tool may be absent; model allowlist may expose only Sol/Terra; custom role metadata may disagree with the host | Enumerate the current thread; verify exact schema, fresh semantics, receipt, and host-observed Luna/max; never borrow sibling evidence |
+| Native subagent | Lowest visibility overhead; no user-owned task; best controller-context isolation; an accepted exact spawn can dispatch under `HOST_ACCEPTED` without telemetry | Current-thread tool may be absent; explicit model rejection or role metadata mismatch still blocks; missing telemetry leaves identity assumed rather than verified | Enumerate the current thread; issue the selected exact call; require task-bound handle/receipt, fresh/history/scope, and no rejection/reroute; use host-observed model/effort only for strict `HOST_VERIFIED`; never borrow sibling evidence |
 | Desktop task | Uses the host's explicit Luna task surface; visible and easy for a user to inspect | Creates a user-owned task; projectless mode cannot touch a repo; project/local mode may have host sandbox limits; effective model telemetry may be absent | Require explicit approval; call `list_projects` first; prefer a fresh worktree; retain `threadId` + `hostId`; classify missing telemetry as `HOST_MODEL_UNOBSERVABLE`; use `OPERATOR_UI_ATTESTED` only under an explicit operator-attested gate and never call it `HOST_VERIFIED` |
 
 ### Problem and solution catalog
@@ -187,8 +201,12 @@ every route. The following matrix must be read before selecting a surface:
 `agent_id` as proof; silently substituting Sol/Terra; or repeatedly resubmitting
 the same packet.
 
-**Solution:** classify the result as thread-bound surface mismatch, record the
-exact schema, evaluate the approved Desktop task route at priority 2, and use
+**Solution:** issue the exact native Luna/max call once. If it is accepted and
+returns a task-bound handle/receipt with fresh/history/scope facts, classify it
+as `HOST_ACCEPTED` and dispatch; do not let stale static metadata block it. If
+the host explicitly rejects the model, returns no handle/receipt, or reports a
+mismatch/reroute, classify the result as thread-bound surface mismatch, record
+the exact schema, evaluate the approved Desktop task route at priority 2, and
 request host registration when Desktop is not eligible or fails. Keep
 `LUNA_MAX` and `Fallback: BLOCKED` unchanged unless the plan explicitly allows
 a compatibility lane.

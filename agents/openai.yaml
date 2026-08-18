@@ -1,7 +1,7 @@
 interface:
   display_name: "Reliable Sol Control"
   short_description: "Clean Sol review with isolated execution"
-  default_prompt: "Use $sol-reliable-control to plan, require verified LUNA_MAX host enablement, route native -> explicitly approved Desktop, delegate, and audit this task without polluting the controller context."
+  default_prompt: "Use $sol-reliable-control to classify the task, use HOST_ACCEPTED as the default native dispatch gate, route clear bounded work to LUNA_MAX, large read-only context work to TERRA_XHIGH, difficult work or lower-lane review failures to a fresh SOL_XHIGH worker, and keep final approval with the Sol controller."
 
 policy:
   allow_implicit_invocation: false

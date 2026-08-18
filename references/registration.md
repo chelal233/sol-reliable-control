@@ -37,16 +37,18 @@ Advertised efforts: <exact host list or per-model matrix>
 Candidate tools: <all visible worker tool names>
 ```
 
-If `multi_agent_v1__spawn_agent` is visible and contains `gpt-5.6-luna / max`,
-use the native call in Step 2A. A future native equivalent is eligible only
-when the current thread exposes an explicit, verifiable native contract. If
-only `collaboration.spawn_agent` is visible, inspect it independently in Step
-2B; the older schema must not masquerade as canonical native v1. If its schema
-or Luna/max matrix does not match, or native preflight cannot obtain the
-required host evidence, record that failure and evaluate the priority-2 Desktop
-path below when user-owned-task approval is present. If Desktop is not eligible
-or fails, return `BLOCKED` with a host-registration action. If a sibling thread
-can see the native Luna surface but this thread cannot, record
+If `multi_agent_v1__spawn_agent` is visible, use the native call in Step 2A.
+Under the default native `HOST_ACCEPTED` gate, the exact call must be accepted
+and return a task-bound handle/receipt with fresh/history/scope facts; the
+static model list need not be complete. A future native equivalent is eligible
+only when the current thread exposes an explicit, verifiable native contract.
+If only `collaboration.spawn_agent` is visible, inspect it independently in
+Step 2B; the older schema must not masquerade as canonical native v1. An
+explicit rejection, missing handle/receipt, mismatch, or reroute records that
+candidate as unavailable and triggers the priority-2 Desktop path when
+user-owned-task approval is present. If Desktop is not eligible or fails,
+return `BLOCKED` with a host-registration action. If a sibling thread can see
+the native Luna surface but this thread cannot, record
 `THREAD_SURFACE_NOT_VISIBLE` and request surface migration/rebind or a fresh
 controller thread. Never call the
 sibling's agent id from this thread.
@@ -65,9 +67,12 @@ multi_agent_v1__spawn_agent({
 })
 ```
 
-Run the identity-only handshake first. The returned `agent_id` is an
-`AGENT_HANDLE` unless the host explicitly labels it a task-bound receipt. Keep
-the high-risk gate closed until host-owned model/effort evidence is returned.
+Run the identity-only handshake first. An accepted exact request plus the
+returned task-bound `agent_id`/`AGENT_HANDLE` satisfies the default native
+`HOST_ACCEPTED` gate even when effective model/effort telemetry is unavailable;
+record `Identity: ASSUMED` and `Identity proof kind:
+HOST_REQUEST_ACCEPTED`. Keep the optional strict `HOST_VERIFIED` gate closed
+until host-owned model/effort evidence is returned.
 
 ## Step 2B: register the alternate generic surface
 
@@ -81,8 +86,9 @@ Required model: gpt-5.6-luna
 Required reasoning effort: max
 Fresh-context field: fork_turns = "none"  # only if the schema declares it
 No controller history: true
-Task-bound receipt: required
-Host-observed identity: gpt-5.6-luna / max
+Identity gate: HOST_ACCEPTED | HOST_VERIFIED
+Task-bound receipt: required (`HOST_RECEIPT` or `AGENT_HANDLE` for native default)
+Host-observed identity: gpt-5.6-luna / max (strict mode)
 ```
 
 The host must preserve the schema's actual field names. A host whose declared
@@ -105,10 +111,12 @@ declares both. `fork_turns = "none"` and `fork_context = false` are adapter
 spellings of the same normalized requirement: fresh context with controller
 history excluded.
 
-This legacy schema cannot impersonate `multi_agent_v1__spawn_agent`, inherit
-its allowlist, or turn an `agent_id` into native-v1 evidence. It qualifies only
-when its own host declaration, exact Luna/max support, receipt, and identity
-evidence satisfy preflight.
+This legacy schema cannot impersonate `multi_agent_v1__spawn_agent` or inherit
+its allowlist. It qualifies under the default native policy when its own exact
+call is accepted, returns a task-bound handle/receipt, and confirms
+fresh/history/scope facts with no rejection/reroute. That yields
+`HOST_ACCEPTED`, `Identity: ASSUMED`; strict `HOST_VERIFIED` still requires
+independent host identity evidence.
 
 For a host that exposes the `multi_agent_v1__spawn_agent` wrapper, the declared
 native variant may be:
@@ -122,18 +130,18 @@ multi_agent_v1__spawn_agent({
 })
 ```
 
-This variant may return an `agent_id`. Treat that value as `AGENT_HANDLE` unless
-the host contract explicitly labels it a task-bound `HOST_RECEIPT`. A successful
-safe probe plus a worker self-report proves that a worker started, but it does
-not prove `HOST_VERIFIED` for a high-risk task. The caller must record the
-distinction and require independent host-observed model/effort evidence before
-implementation.
+This variant may return an `agent_id`. Treat that value as `AGENT_HANDLE` and
+use it as task-bound evidence for the default `HOST_ACCEPTED` gate when the
+exact request was accepted; it does not prove `HOST_VERIFIED`. The caller must
+record the distinction and require independent host-observed model/effort
+evidence only when the strict gate is selected.
 
-The host registration is not complete until it also supports a task-bound
-`HOST_RECEIPT`. The receipt or authoritative host launch record must bind the
-task, surface, requested model/effort, fresh-context setting, controller
-history exclusion, and host-observed model/effort. An advertised allowlist or
-returned `agent_id` alone is not enough.
+The default native registration is complete when the exact request is accepted
+and a task-bound `HOST_RECEIPT` or `AGENT_HANDLE` binds the task, surface,
+fresh-context setting, controller-history exclusion, and scope. An advertised
+allowlist or an unbound `agent_id` alone is not enough. Strict
+`HOST_VERIFIED` additionally requires host-observed model/effort or an
+authoritative role launch record.
 
 Do not infer from this alternate schema that the host has no Luna capability
 when `multi_agent_v1__spawn_agent` is visible on the same Desktop host. Schema
@@ -307,9 +315,12 @@ following sequence:
    the priority-2 Desktop gate; otherwise start a fresh controller thread or
    request explicit surface migration/rebind.
 4. Read the selected surface metadata again and record the model/effort list.
-5. Do not dispatch until `gpt-5.6-luna / max` is present on that surface.
-6. Send the identity-only handshake and require the receipt/identity evidence
-   before sending implementation instructions.
+5. Send the exact Luna/max identity-only handshake. An accepted call with a
+   task-bound handle/receipt is enough for the default `HOST_ACCEPTED` gate;
+   an explicit rejection remains blocked.
+6. If the plan selected strict `HOST_VERIFIED`, require host-observed effective
+   model/effort before sending implementation instructions; otherwise proceed
+   only after the accepted native handshake and scope review.
 
 A successful top-level Luna session does not replace this refresh. Likewise,
 the presence of a TOML role file does not replace host evidence.
@@ -323,7 +334,7 @@ Route: LUNA_MAX
 Requested model/effort: gpt-5.6-luna / max
 Execution context: FRESH
 Controller history: EXCLUDED
-Identity gate: HOST_VERIFIED
+Identity gate: HOST_ACCEPTED
 Fallback: BLOCKED
 ```
 
@@ -350,21 +361,24 @@ collaboration.spawn_agent({
 })
 ```
 
-The first response must be treated as a handshake, not implementation. The
-caller records:
+The first response must be treated as a handshake, not implementation. Under
+the default native gate, the caller records:
 
 ```text
 Capability verdict: AVAILABLE
-Dispatch receipt kind: HOST_RECEIPT
+Host acceptance: ACCEPTED
+Dispatch receipt kind: HOST_RECEIPT | AGENT_HANDLE
 Fresh-context proof: VERIFIED
 Controller-history proof: EXCLUDED
-Host-observed model: gpt-5.6-luna
-Observed effort: max
-Identity proof kind: HOST_OBSERVED_MODEL_EFFORT | ROLE_MAPPING_AND_LAUNCH_RECORD
-Identity: VERIFIED
+Host-observed model: UNKNOWN (allowed for HOST_ACCEPTED)
+Observed effort: UNKNOWN (allowed for HOST_ACCEPTED)
+Identity proof kind: HOST_REQUEST_ACCEPTED
+Identity: ASSUMED
 ```
 
-Only then may the bounded task packet authorize implementation.
+Only then may the bounded task packet authorize implementation. A strict
+`HOST_VERIFIED` packet must additionally replace the unknown model/effort with
+host-observed evidence and record `Identity: VERIFIED`.
 
 ## `config.toml` boundary and safe smoke test
 
@@ -400,14 +414,17 @@ Surface: <surface>
 Tool/schema: <tool and exact fields>
 Requested model/effort: gpt-5.6-luna / max
 Required context: FRESH; controller history EXCLUDED
-Required evidence: task-bound HOST_RECEIPT + host-observed model/effort
+Required evidence: task-bound HOST_RECEIPT or AGENT_HANDLE + accepted exact spawn (native default); host-observed model/effort for strict HOST_VERIFIED
 Current advertised models: <host list>
 Dispatch: NOT_RUN
 Fallback: BLOCKED
 Next action: host owner registers the pair, reloads the surface, and returns a new capability snapshot
 ```
 
-If the host still advertises only `gpt-5.6-sol` and `gpt-5.6-terra`, the
-correct status remains `HOST_ENABLEMENT_REQUIRED`; the caller must not create a
-user-owned task, silently change the controller model, retry an identical
-packet, or claim that a local config file registered Luna.
+If the host still advertises only `gpt-5.6-sol` and `gpt-5.6-terra`, run the
+exact native Luna/max handshake once before classifying the surface. An
+explicit `Unknown model` rejection, no task-bound handle/receipt, mismatch, or
+reroute remains `HOST_ENABLEMENT_REQUIRED`; an accepted exact call qualifies
+for the default `HOST_ACCEPTED` gate despite stale metadata. The caller must
+not create a user-owned task, silently change the controller model, retry an
+identical rejected packet, or claim that a local config file registered Luna.

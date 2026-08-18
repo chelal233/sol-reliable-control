@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add the explicit native `HOST_ACCEPTED` dispatch policy: an exact accepted
+  Luna/max spawn with a task-bound handle/receipt can proceed without effective
+  model telemetry; retain strict `HOST_VERIFIED` as an optional stronger gate.
 - Improve Luna handshakes across Windows/Linux/macOS with platform temp workdirs,
   PATH-resolved runtimes, and structured host diagnostics.
 - Make the synchronous read-only app-server handshake return its task-bound
